@@ -1,0 +1,18 @@
+[package]
+name = "better-auth-yew"
+description = "Yew integration for Better Auth — hooks, context, reactive session"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+better-auth-client = { path = "../better-auth-client" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+tracing = { workspace = true }
+
+# Yew framework
+yew = { version = "0.21", features = ["csr"] }
+wasm-bindgen-futures = "0.4"

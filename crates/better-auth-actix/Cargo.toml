@@ -1,0 +1,33 @@
+[package]
+name = "better-auth-actix"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Actix-web integration for Better Auth — Rust auth framework"
+
+[dependencies]
+better-auth-core = { path = "../better-auth-core" }
+better-auth = { path = "../better-auth" }
+
+# Async
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Web framework
+actix-web = "4"
+actix-rt = "2"
+
+# Time
+chrono = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+uuid = { workspace = true }
+actix-rt = "2"

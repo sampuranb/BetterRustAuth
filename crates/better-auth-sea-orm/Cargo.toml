@@ -1,0 +1,23 @@
+[package]
+name = "better-auth-sea-orm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Sea-ORM database adapter for better-auth – entity-based ORM integration"
+
+[dependencies]
+better-auth-core = { path = "../better-auth-core" }
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio = { workspace = true }
+
+# Sea-ORM
+sea-orm = { version = "1", features = ["sqlx-sqlite", "runtime-tokio-rustls"] }
+sea-query = "0.32"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"] }

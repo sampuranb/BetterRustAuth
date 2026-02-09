@@ -1,0 +1,20 @@
+[package]
+name = "better-auth-core"
+description = "Core types, traits, and database adapter interfaces for Better Auth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+rand = { workspace = true }
+uuid = { workspace = true }
+nanoid = "0.4"

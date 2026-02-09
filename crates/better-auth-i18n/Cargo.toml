@@ -1,0 +1,16 @@
+[package]
+name = "better-auth-i18n"
+description = "i18n plugin for Better Auth — locale detection, error message translation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+better-auth-core = { path = "../better-auth-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }

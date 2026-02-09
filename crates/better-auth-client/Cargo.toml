@@ -1,0 +1,32 @@
+[package]
+name = "better-auth-client"
+description = "Headless Rust client SDK for Better Auth — typed async methods, cookie-jar session management, auto-refresh"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# HTTP client
+reqwest = { workspace = true, features = ["json", "cookies"] }
+url = { workspace = true }
+
+# Async
+tokio = { workspace = true, features = ["sync", "time"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Error
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+wiremock = "0.6"

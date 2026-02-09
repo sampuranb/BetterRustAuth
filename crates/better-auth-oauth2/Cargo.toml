@@ -1,0 +1,22 @@
+[package]
+name = "better-auth-oauth2"
+description = "OAuth2 protocol layer — authorization URL, code exchange, refresh, PKCE, provider trait"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+better-auth-core = { path = "../better-auth-core" }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+reqwest = { workspace = true }
+url = { workspace = true }
+sha2 = { workspace = true }
+base64 = { workspace = true }
+rand = { workspace = true }
+

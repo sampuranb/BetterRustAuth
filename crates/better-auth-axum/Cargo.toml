@@ -1,0 +1,32 @@
+[package]
+name = "better-auth-axum"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+better-auth-core = { path = "../better-auth-core" }
+better-auth = { path = "../better-auth" }
+
+# Async
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Web framework
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+uuid = { workspace = true }

@@ -1,0 +1,23 @@
+[package]
+name = "better-auth-leptos"
+description = "Leptos integration for Better Auth — reactive signals, use_session(), provide_auth()"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+better-auth-client = { path = "../better-auth-client" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+tracing = { workspace = true }
+
+# Leptos framework
+leptos = { version = "0.7", features = ["csr"] }
+
+[features]
+default = ["csr"]
+csr = []
+ssr = ["leptos/ssr"]
+hydrate = ["leptos/hydrate"]

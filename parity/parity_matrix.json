@@ -1,0 +1,488 @@
+{
+  "meta": {
+    "name": "better-auth rust parity matrix",
+    "generated_on": "2026-02-09",
+    "root": "/Users/sampuran/Desktop/Better Auth/Rust",
+    "original_root": "/Users/sampuran/Desktop/Better Auth/Original Version",
+    "status_values": ["done", "pending"]
+  },
+  "items": [
+    {
+      "id": "pkg.core.better-auth",
+      "category": "package",
+      "priority": "P1",
+      "status": "done",
+      "title": "Core auth crate exists",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth",
+        "/Users/sampuran/Desktop/Better Auth/Original Version/packages/better-auth"
+      ],
+      "check": { "mode": "quick", "command": "test -d crates/better-auth" }
+    },
+    {
+      "id": "pkg.core.core",
+      "category": "package",
+      "priority": "P1",
+      "status": "done",
+      "title": "Core shared crate exists",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-core",
+        "/Users/sampuran/Desktop/Better Auth/Original Version/packages/core"
+      ],
+      "check": { "mode": "quick", "command": "test -d crates/better-auth-core" }
+    },
+    {
+      "id": "pkg.core.cli",
+      "category": "package",
+      "priority": "P1",
+      "status": "done",
+      "title": "CLI crate exists",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-cli",
+        "/Users/sampuran/Desktop/Better Auth/Original Version/packages/cli"
+      ],
+      "check": { "mode": "quick", "command": "test -d crates/better-auth-cli" }
+    },
+    {
+      "id": "pkg.core.i18n",
+      "category": "package",
+      "priority": "P1",
+      "status": "done",
+      "title": "i18n crate exists",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-i18n",
+        "/Users/sampuran/Desktop/Better Auth/Original Version/packages/i18n"
+      ],
+      "check": { "mode": "quick", "command": "test -d crates/better-auth-i18n" }
+    },
+    {
+      "id": "pkg.core.oauth-provider",
+      "category": "package",
+      "priority": "P1",
+      "status": "done",
+      "title": "OAuth provider crate exists",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-oauth-provider",
+        "/Users/sampuran/Desktop/Better Auth/Original Version/packages/oauth-provider"
+      ],
+      "check": { "mode": "quick", "command": "test -d crates/better-auth-oauth-provider" }
+    },
+    {
+      "id": "pkg.core.passkey",
+      "category": "package",
+      "priority": "P1",
+      "status": "done",
+      "title": "Passkey crate exists",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-passkey",
+        "/Users/sampuran/Desktop/Better Auth/Original Version/packages/passkey"
+      ],
+      "check": { "mode": "quick", "command": "test -d crates/better-auth-passkey" }
+    },
+    {
+      "id": "pkg.core.scim",
+      "category": "package",
+      "priority": "P1",
+      "status": "done",
+      "title": "SCIM crate exists",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-scim",
+        "/Users/sampuran/Desktop/Better Auth/Original Version/packages/scim"
+      ],
+      "check": { "mode": "quick", "command": "test -d crates/better-auth-scim" }
+    },
+    {
+      "id": "pkg.core.sso",
+      "category": "package",
+      "priority": "P1",
+      "status": "done",
+      "title": "SSO crate exists",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-sso",
+        "/Users/sampuran/Desktop/Better Auth/Original Version/packages/sso"
+      ],
+      "check": { "mode": "quick", "command": "test -d crates/better-auth-sso" }
+    },
+    {
+      "id": "pkg.core.stripe",
+      "category": "package",
+      "priority": "P1",
+      "status": "done",
+      "title": "Stripe crate exists",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-stripe",
+        "/Users/sampuran/Desktop/Better Auth/Original Version/packages/stripe"
+      ],
+      "check": { "mode": "quick", "command": "test -d crates/better-auth-stripe" }
+    },
+    {
+      "id": "pkg.adapters.sqlx",
+      "category": "package",
+      "priority": "P2",
+      "status": "done",
+      "title": "SQLx adapter crate exists",
+      "paths": ["/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-sqlx"],
+      "check": { "mode": "quick", "command": "test -d crates/better-auth-sqlx" }
+    },
+    {
+      "id": "pkg.adapters.diesel",
+      "category": "package",
+      "priority": "P2",
+      "status": "done",
+      "title": "Diesel adapter crate exists",
+      "paths": ["/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-diesel"],
+      "check": { "mode": "quick", "command": "test -d crates/better-auth-diesel" }
+    },
+    {
+      "id": "pkg.adapters.sea-orm",
+      "category": "package",
+      "priority": "P2",
+      "status": "done",
+      "title": "Sea-ORM adapter crate exists",
+      "paths": ["/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-sea-orm"],
+      "check": { "mode": "quick", "command": "test -d crates/better-auth-sea-orm" }
+    },
+    {
+      "id": "pkg.missing.electron",
+      "category": "package",
+      "priority": "P2",
+      "status": "pending",
+      "title": "Electron companion package parity",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Original Version/packages/electron",
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-electron"
+      ],
+      "check": { "mode": "quick", "command": "test -d crates/better-auth-electron" }
+    },
+    {
+      "id": "pkg.missing.expo",
+      "category": "package",
+      "priority": "P2",
+      "status": "pending",
+      "title": "Expo companion package parity",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Original Version/packages/expo",
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-expo"
+      ],
+      "check": { "mode": "quick", "command": "test -d crates/better-auth-expo" }
+    },
+    {
+      "id": "pkg.missing.telemetry",
+      "category": "package",
+      "priority": "P2",
+      "status": "pending",
+      "title": "Telemetry package parity",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Original Version/packages/telemetry",
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-telemetry"
+      ],
+      "check": { "mode": "quick", "command": "test -d crates/better-auth-telemetry" }
+    },
+    {
+      "id": "pkg.missing.test-utils",
+      "category": "package",
+      "priority": "P2",
+      "status": "pending",
+      "title": "Test-utils package parity",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Original Version/packages/test-utils",
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-test-utils"
+      ],
+      "check": { "mode": "quick", "command": "test -d crates/better-auth-test-utils" }
+    },
+    {
+      "id": "pkg.missing.drizzle",
+      "category": "package",
+      "priority": "P2",
+      "status": "pending",
+      "title": "Drizzle adapter package parity",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Original Version/packages/drizzle-adapter",
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-drizzle"
+      ],
+      "check": { "mode": "quick", "command": "test -d crates/better-auth-drizzle" }
+    },
+    {
+      "id": "pkg.missing.kysely",
+      "category": "package",
+      "priority": "P2",
+      "status": "pending",
+      "title": "Kysely adapter package parity",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Original Version/packages/kysely-adapter",
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-kysely"
+      ],
+      "check": { "mode": "quick", "command": "test -d crates/better-auth-kysely" }
+    },
+    {
+      "id": "pkg.missing.prisma",
+      "category": "package",
+      "priority": "P2",
+      "status": "pending",
+      "title": "Prisma adapter package parity",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Original Version/packages/prisma-adapter",
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-prisma"
+      ],
+      "check": { "mode": "quick", "command": "test -d crates/better-auth-prisma" }
+    },
+
+    {
+      "id": "route.get-session.alias",
+      "category": "endpoint",
+      "priority": "P0",
+      "status": "pending",
+      "title": "Expose /get-session route compatibility",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-axum/src/lib.rs",
+        "/Users/sampuran/Desktop/Better Auth/Original Version/packages/better-auth/src/api/routes/session.ts"
+      ],
+      "check": { "mode": "quick", "command": "rg -q '\\.route\\(\"/get-session\", (get|post)' crates/better-auth-axum/src/lib.rs" }
+    },
+    {
+      "id": "route.change-email",
+      "category": "endpoint",
+      "priority": "P0",
+      "status": "pending",
+      "title": "Expose /change-email",
+      "paths": ["/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-axum/src/lib.rs"],
+      "check": { "mode": "quick", "command": "rg -q '\\.route\\(\"/change-email\", post' crates/better-auth-axum/src/lib.rs" }
+    },
+    {
+      "id": "route.get-access-token",
+      "category": "endpoint",
+      "priority": "P0",
+      "status": "pending",
+      "title": "Expose /get-access-token",
+      "paths": ["/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-axum/src/lib.rs"],
+      "check": { "mode": "quick", "command": "rg -q '\\.route\\(\"/get-access-token\", post' crates/better-auth-axum/src/lib.rs" }
+    },
+    {
+      "id": "route.refresh-token",
+      "category": "endpoint",
+      "priority": "P0",
+      "status": "pending",
+      "title": "Expose /refresh-token",
+      "paths": ["/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-axum/src/lib.rs"],
+      "check": { "mode": "quick", "command": "rg -q '\\.route\\(\"/refresh-token\", post' crates/better-auth-axum/src/lib.rs" }
+    },
+    {
+      "id": "route.account-info",
+      "category": "endpoint",
+      "priority": "P0",
+      "status": "pending",
+      "title": "Expose /account-info",
+      "paths": ["/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-axum/src/lib.rs"],
+      "check": { "mode": "quick", "command": "rg -q '\\.route\\(\"/account-info\", get' crates/better-auth-axum/src/lib.rs" }
+    },
+    {
+      "id": "route.delete-user-callback",
+      "category": "endpoint",
+      "priority": "P0",
+      "status": "pending",
+      "title": "Expose /delete-user/callback",
+      "paths": ["/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-axum/src/lib.rs"],
+      "check": { "mode": "quick", "command": "rg -q '\\.route\\(\"/delete-user/callback\", get' crates/better-auth-axum/src/lib.rs" }
+    },
+    {
+      "id": "route.reset-password-token-callback",
+      "category": "endpoint",
+      "priority": "P0",
+      "status": "pending",
+      "title": "Expose /reset-password/:token callback",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-axum/src/lib.rs",
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth/src/routes/password.rs"
+      ],
+      "check": { "mode": "quick", "command": "rg -q '/reset-password/:token|/reset-password/\\{token\\}|/reset-password/\\*token' crates/better-auth-axum/src/lib.rs" }
+    },
+    {
+      "id": "route.callback-post",
+      "category": "endpoint",
+      "priority": "P0",
+      "status": "pending",
+      "title": "OAuth callback supports POST as in TS",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-axum/src/lib.rs",
+        "/Users/sampuran/Desktop/Better Auth/Original Version/packages/better-auth/src/api/routes/callback.ts"
+      ],
+      "check": { "mode": "quick", "command": "rg -q '\\.route\\(\"/callback/\\{provider\\}\", (get\\(handle_callback\\)\\.post|post\\(handle_callback\\)|get\\(handle_callback\\).*post\\()' crates/better-auth-axum/src/lib.rs" }
+    },
+
+    {
+      "id": "behavior.social-path-normalized",
+      "category": "behavior",
+      "priority": "P0",
+      "status": "pending",
+      "title": "No /signin/social typo in OAuth flow",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth/src/routes/sign_in.rs",
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth/src/routes/account.rs"
+      ],
+      "check": { "mode": "quick", "command": "! rg -q '/signin/social' crates/better-auth/src/routes/sign_in.rs crates/better-auth/src/routes/account.rs" }
+    },
+    {
+      "id": "behavior.oauth-callback-not-placeholder",
+      "category": "behavior",
+      "priority": "P0",
+      "status": "pending",
+      "title": "OAuth callback has no placeholder markers",
+      "paths": ["/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth/src/routes/callback.rs"],
+      "check": { "mode": "quick", "command": "! rg -qi 'placeholder|full implementation' crates/better-auth/src/routes/callback.rs" }
+    },
+    {
+      "id": "behavior.account-refresh-not-placeholder",
+      "category": "behavior",
+      "priority": "P0",
+      "status": "pending",
+      "title": "Account refresh/info has no placeholder markers",
+      "paths": ["/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth/src/routes/account.rs"],
+      "check": { "mode": "quick", "command": "! rg -qi 'full implementation|For now, return stored account data' crates/better-auth/src/routes/account.rs" }
+    },
+    {
+      "id": "behavior.pipeline-hooks-wired",
+      "category": "behavior",
+      "priority": "P0",
+      "status": "pending",
+      "title": "Plugin middleware hooks are wired",
+      "paths": ["/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth/src/api/endpoint_pipeline.rs"],
+      "check": { "mode": "quick", "command": "! rg -q 'TODO: Wire up plugin middleware hooks' crates/better-auth/src/api/endpoint_pipeline.rs" }
+    },
+    {
+      "id": "behavior.plugin-dispatch-no-501",
+      "category": "behavior",
+      "priority": "P0",
+      "status": "pending",
+      "title": "Plugin dispatch does not return not-implemented stub",
+      "paths": ["/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-axum/src/lib.rs"],
+      "check": { "mode": "quick", "command": "! rg -q 'Endpoint exists but handler not implemented' crates/better-auth-axum/src/lib.rs" }
+    },
+    {
+      "id": "behavior.signout-cookies-applied",
+      "category": "behavior",
+      "priority": "P0",
+      "status": "pending",
+      "title": "Axum sign-out applies cookie deletion headers",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-axum/src/lib.rs",
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth/src/routes/sign_out.rs"
+      ],
+      "check": { "mode": "quick", "command": "! rg -q 'Ok\\(Json\\(result\\.response\\)\\)' crates/better-auth-axum/src/lib.rs" }
+    },
+    {
+      "id": "behavior.cookie-name-not-hardcoded",
+      "category": "behavior",
+      "priority": "P0",
+      "status": "pending",
+      "title": "Session cookie extraction does not hardcode better-auth.session_token",
+      "paths": ["/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-axum/src/lib.rs"],
+      "check": { "mode": "quick", "command": "! rg -q 'better-auth\\.session_token' crates/better-auth-axum/src/lib.rs" }
+    },
+    {
+      "id": "behavior.phone-otp-send-implemented",
+      "category": "behavior",
+      "priority": "P1",
+      "status": "pending",
+      "title": "Phone OTP plugin has no sendOTP not implemented sentinel",
+      "paths": ["/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth/src/plugins/phone_number.rs"],
+      "check": { "mode": "quick", "command": "! rg -q 'sendOTP not implemented' crates/better-auth/src/plugins/phone_number.rs" }
+    },
+    {
+      "id": "behavior.email-otp-send-implemented",
+      "category": "behavior",
+      "priority": "P1",
+      "status": "pending",
+      "title": "Email OTP plugin has no send verification not implemented sentinel",
+      "paths": ["/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth/src/plugins/email_otp.rs"],
+      "check": { "mode": "quick", "command": "! rg -q 'Send email verification is not implemented' crates/better-auth/src/plugins/email_otp.rs" }
+    },
+
+    {
+      "id": "config.disable-csrf-check",
+      "category": "config",
+      "priority": "P1",
+      "status": "done",
+      "title": "disable_csrf_check option exists",
+      "paths": ["/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-core/src/options.rs"],
+      "check": { "mode": "quick", "command": "rg -q 'disable_csrf_check' crates/better-auth-core/src/options.rs" }
+    },
+    {
+      "id": "config.trusted-proxy-headers",
+      "category": "config",
+      "priority": "P0",
+      "status": "pending",
+      "title": "trustedProxyHeaders parity",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-core/src/options.rs",
+        "/Users/sampuran/Desktop/Better Auth/Original Version/packages/core/src/types/init-options.ts"
+      ],
+      "check": { "mode": "quick", "command": "rg -q 'trusted_proxy_headers' crates/better-auth-core/src/options.rs" }
+    },
+    {
+      "id": "config.secondary-storage",
+      "category": "config",
+      "priority": "P0",
+      "status": "pending",
+      "title": "secondaryStorage parity",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-core/src/options.rs",
+        "/Users/sampuran/Desktop/Better Auth/Original Version/packages/core/src/types/init-options.ts"
+      ],
+      "check": { "mode": "quick", "command": "rg -q 'secondary_storage' crates/better-auth-core/src/options.rs" }
+    },
+    {
+      "id": "config.disabled-paths",
+      "category": "config",
+      "priority": "P0",
+      "status": "pending",
+      "title": "disabledPaths parity",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-core/src/options.rs",
+        "/Users/sampuran/Desktop/Better Auth/Original Version/packages/core/src/types/init-options.ts"
+      ],
+      "check": { "mode": "quick", "command": "rg -q 'disabled_paths' crates/better-auth-core/src/options.rs" }
+    },
+
+    {
+      "id": "provider.microsoft-entra-id",
+      "category": "provider",
+      "priority": "P1",
+      "status": "pending",
+      "title": "microsoft-entra-id provider ID parity",
+      "paths": [
+        "/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth-oauth2/src/providers/registry.rs",
+        "/Users/sampuran/Desktop/Better Auth/Original Version/packages/core/src/social-providers/microsoft-entra-id.ts"
+      ],
+      "check": { "mode": "quick", "command": "rg -q 'microsoft-entra-id' crates/better-auth-oauth2/src/providers/registry.rs" }
+    },
+
+    {
+      "id": "plugin.organization-endpoints",
+      "category": "plugin",
+      "priority": "P1",
+      "status": "done",
+      "title": "Organization plugin has broad endpoint surface",
+      "paths": ["/Users/sampuran/Desktop/Better Auth/Rust/crates/better-auth/src/plugins/organization/mod.rs"],
+      "check": { "mode": "quick", "command": "test \"$(rg -n 'PluginEndpoint::with_handler\\(' crates/better-auth/src/plugins/organization/mod.rs | wc -l | tr -d ' ')\" -ge 30" }
+    },
+
+    {
+      "id": "test.workspace-lib",
+      "category": "test",
+      "priority": "P1",
+      "status": "done",
+      "title": "Workspace library tests pass",
+      "paths": ["/Users/sampuran/Desktop/Better Auth/Rust"],
+      "check": { "mode": "quick", "command": "cargo test --workspace --lib >/dev/null 2>&1" }
+    },
+    {
+      "id": "test.workspace-all",
+      "category": "test",
+      "priority": "P0",
+      "status": "done",
+      "title": "Workspace full tests pass (including integration tests)",
+      "paths": ["/Users/sampuran/Desktop/Better Auth/Rust"],
+      "check": { "mode": "full", "command": "cargo test --workspace >/dev/null 2>&1" }
+    }
+  ]
+}

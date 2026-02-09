@@ -1,0 +1,102 @@
+[package]
+name = "better-auth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+
+# Tier 1: Simple plugins
+plugin-bearer = []
+plugin-additional-fields = []
+plugin-haveibeenpwned = []
+plugin-last-login-method = []
+plugin-custom-session = []
+plugin-one-time-token = []
+
+# Tier 2: Auth methods
+plugin-username = []
+plugin-anonymous = []
+plugin-magic-link = []
+plugin-email-otp = []
+plugin-phone-number = []
+plugin-one-tap = []
+plugin-generic-oauth = []
+plugin-oauth-proxy = []
+plugin-siwe = []
+plugin-captcha = []
+
+# Tier 3: Security & Management
+plugin-two-factor = []
+plugin-admin = []
+plugin-access = []
+plugin-organization = ["plugin-access"]
+
+# Tier 4: Advanced
+plugin-api-key = []
+plugin-jwt = []
+plugin-multi-session = []
+plugin-device-authorization = []
+plugin-oidc-provider = []
+plugin-open-api = []
+plugin-mcp = []
+
+# Convenience
+all-plugins = [
+    "plugin-bearer", "plugin-additional-fields", "plugin-haveibeenpwned", "plugin-last-login-method",
+    "plugin-custom-session", "plugin-one-time-token",
+    "plugin-username", "plugin-anonymous", "plugin-magic-link",
+    "plugin-email-otp", "plugin-phone-number", "plugin-one-tap",
+    "plugin-generic-oauth", "plugin-oauth-proxy", "plugin-siwe", "plugin-captcha",
+    "plugin-two-factor", "plugin-admin", "plugin-access", "plugin-organization",
+    "plugin-api-key", "plugin-jwt", "plugin-multi-session",
+    "plugin-device-authorization", "plugin-oidc-provider", "plugin-open-api", "plugin-mcp",
+]
+
+[dependencies]
+better-auth-core = { path = "../better-auth-core" }
+better-auth-oauth2 = { path = "../better-auth-oauth2" }
+
+# Async
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Crypto
+rand = { workspace = true }
+sha2 = { workspace = true }
+sha1 = { workspace = true }
+base64 = { workspace = true }
+scrypt = { workspace = true }
+jsonwebtoken = { workspace = true }
+chacha20poly1305 = { workspace = true }
+hmac = { workspace = true }
+hkdf = { workspace = true }
+hex = { workspace = true }
+subtle = { workspace = true }
+k256 = { workspace = true }
+
+# HTTP
+reqwest = { workspace = true }
+url = { workspace = true }
+
+# Utils
+uuid = { workspace = true }
+regex = { workspace = true }
+urlencoding = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

@@ -1,0 +1,28 @@
+[package]
+name = "better-auth-diesel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Diesel database adapter for better-auth – full ORM integration with migrations"
+
+[dependencies]
+better-auth-core = { path = "../better-auth-core" }
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+
+# Diesel (with SQLite default, Postgres and MySQL optional)
+diesel = { version = "2", features = ["r2d2", "serde_json"] }
+
+[features]
+default = ["sqlite"]
+sqlite = ["diesel/sqlite"]
+postgres = ["diesel/postgres"]
+mysql = ["diesel/mysql"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"] }

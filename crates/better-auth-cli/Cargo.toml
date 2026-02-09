@@ -1,0 +1,60 @@
+[package]
+name = "better-auth-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "CLI tool for Better Auth – schema migrations, secret generation, and project scaffolding"
+
+[[bin]]
+name = "better-auth"
+path = "src/main.rs"
+
+[dependencies]
+# Workspace crates
+better-auth-core = { path = "../better-auth-core" }
+
+# CLI framework
+clap = { version = "4", features = ["derive", "color"] }
+
+# Interactive prompts
+dialoguer = { version = "0.11", features = ["fuzzy-select"] }
+
+# Progress indicators
+indicatif = "0.17"
+
+# Colors
+colored = "2"
+
+# Crypto (for secret generation)
+rand.workspace = true
+hex.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+toml = "0.8"
+
+# System info
+sysinfo = "0.32"
+
+# Clipboard
+arboard = "3"
+
+# Date/time (for migration timestamps and login tokens)
+chrono.workspace = true
+
+# HTTP client (for login command device auth flow — needs blocking, not in workspace)
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+
+# Open URLs/deeplinks in browser
+open = "5"
+
+# Base64 encoding (for MCP deeplinks)
+base64.workspace = true
+
+# URL encoding
+urlencoding.workspace = true
+
+# Home directory detection
+dirs = "5"
