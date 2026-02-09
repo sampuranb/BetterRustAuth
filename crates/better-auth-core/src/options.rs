@@ -161,18 +161,31 @@ pub struct EmailAndPasswordOptions {
     #[serde(default)]
     pub require_email_verification: bool,
 
-    /// Send email verification on sign-in if not verified (default: false).
-    #[serde(default)]
-    pub send_on_sign_in: bool,
-
     /// Disable signup (only allow sign-in for existing users).
     #[serde(default)]
     pub disable_signup: bool,
+
+    /// Whether to revoke all other sessions when resetting password.
+    ///
+    /// Maps to TS `emailAndPassword.revokeSessionsOnPasswordReset`.
+    ///
+    /// @default false
+    #[serde(default)]
+    pub revoke_sessions_on_password_reset: bool,
+
+    /// Reset password token expiry in seconds.
+    ///
+    /// Maps to TS `emailAndPassword.resetPasswordTokenExpiresIn`.
+    ///
+    /// @default 3600 (1 hour)
+    #[serde(default = "default_reset_password_token_expires_in")]
+    pub reset_password_token_expires_in: u64,
 }
 
 fn default_min_password_length() -> usize { 8 }
 fn default_max_password_length() -> usize { 128 }
 fn default_true() -> bool { true }
+fn default_reset_password_token_expires_in() -> u64 { 3600 }
 
 impl Default for EmailAndPasswordOptions {
     fn default() -> Self {
@@ -182,8 +195,9 @@ impl Default for EmailAndPasswordOptions {
             max_password_length: default_max_password_length(),
             auto_sign_in: true,
             require_email_verification: false,
-            send_on_sign_in: false,
             disable_signup: false,
+            revoke_sessions_on_password_reset: false,
+            reset_password_token_expires_in: default_reset_password_token_expires_in(),
         }
     }
 }
@@ -397,6 +411,15 @@ pub struct EmailVerificationOptions {
     #[serde(default)]
     pub send_on_sign_up: bool,
 
+    /// Send a verification email automatically on sign in when the user's
+    /// email is not verified.
+    ///
+    /// Maps to TS `emailVerification.sendOnSignIn`.
+    ///
+    /// @default false
+    #[serde(default)]
+    pub send_on_sign_in: bool,
+
     /// Auto-sign-in after email verification (default: false).
     #[serde(default)]
     pub auto_sign_in_after_verification: bool,
@@ -521,6 +544,42 @@ pub struct AdvancedOptions {
     /// Maps to TS `disabledPaths`.
     #[serde(default)]
     pub disabled_paths: Vec<String>,
+
+    /// Skip trailing slashes in API routes.
+    ///
+    /// When enabled, requests with trailing slashes (e.g., `/api/auth/session/`)
+    /// will be handled the same as requests without (e.g., `/api/auth/session`).
+    ///
+    /// Maps to TS `advanced.skipTrailingSlashes`.
+    ///
+    /// @default false
+    #[serde(default)]
+    pub skip_trailing_slashes: bool,
+
+    /// Enable background task processing.
+    ///
+    /// When enabled, non-critical operations (like timing-attack mitigation
+    /// dummy hashes, analytics, cleanup) will be spawned as background
+    /// tokio tasks instead of being awaited in the request path.
+    ///
+    /// This is the Rust equivalent of TS `backgroundTasks.handler` which
+    /// accepts Vercel's `waitUntil` or Cloudflare's `ctx.waitUntil`.
+    /// In Rust, we use `tokio::spawn` natively.
+    ///
+    /// @default false
+    #[serde(default)]
+    pub enable_background_tasks: bool,
+
+    /// How to store verification identifiers (tokens, OTPs, etc.)
+    ///
+    /// Maps to TS `advanced.verification.storeIdentifier`.
+    ///
+    /// - `"plain"` — store identifiers as-is (default)
+    /// - `"hashed"` — hash identifiers with SHA-256 before storing
+    ///
+    /// @default "plain"
+    #[serde(default)]
+    pub store_identifier: StoreIdentifierOption,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -600,4 +659,25 @@ pub struct OnApiErrorOptions {
     /// Custom error page URL (default: "{baseURL}/error").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_url: Option<String>,
+}
+
+// ─── Store Identifier Option ─────────────────────────────────────
+
+/// How to store verification identifiers (tokens, OTPs, etc.)
+///
+/// Maps to TS `StoreIdentifierOption` type:
+/// - `"plain"` — store identifiers as-is
+/// - `"hashed"` — hash identifiers with SHA-256 before storing
+///
+/// The TS version also supports a custom hash function via
+/// `{ hash: (identifier: string) => Promise<string> }`, but we
+/// don't replicate that in Rust — use `hashed` with SHA-256 instead.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StoreIdentifierOption {
+    /// Store identifiers in plain text (default).
+    #[default]
+    Plain,
+    /// Hash identifiers with SHA-256 before storing.
+    Hashed,
 }

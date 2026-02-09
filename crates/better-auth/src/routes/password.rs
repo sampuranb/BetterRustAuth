@@ -157,7 +157,7 @@ pub async fn handle_forgot_password(
 /// 3. Hash new password
 /// 4. Update or create credential account
 /// 5. Delete verification token
-/// 6. Optionally invalidate sessions
+/// 6. Optionally invalidate sessions (controlled by `revokeSessionsOnPasswordReset`)
 pub async fn handle_reset_password(
     ctx: Arc<AuthContext>,
     body: ResetPasswordRequest,
@@ -224,9 +224,11 @@ pub async fn handle_reset_password(
     // 5. Delete verification token
     ctx.adapter.delete_verification(&identifier).await?;
 
-    // 6. Invalidate all existing sessions for security
-    // The TS version checks `revokeSessionsOnPasswordReset` option — by default we revoke.
-    ctx.adapter.delete_sessions_for_user(user_id).await?;
+    // 6. Conditionally revoke sessions — matches TS `revokeSessionsOnPasswordReset` option.
+    // Default is false in both TS and Rust.
+    if ep.revoke_sessions_on_password_reset {
+        ctx.adapter.delete_sessions_for_user(user_id).await?;
+    }
 
     Ok(PasswordStatusResponse {
         status: true,

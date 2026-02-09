@@ -4,11 +4,11 @@
 // Supports SQLite, PostgreSQL, MySQL, and MSSQL. Generates CREATE TABLE,
 // ALTER TABLE, and CREATE INDEX statements. Full type mapping per database.
 
-use sqlx::{AnyPool, Row};
+use sqlx::AnyPool;
 
 use better_auth_core::db::adapter::{AdapterResult, SchemaOptions, SchemaStatus};
 use better_auth_core::db::schema::{AuthSchema, FieldType, SchemaField};
-use better_auth_core::error::BetterAuthError;
+
 
 use crate::query_builder;
 
@@ -375,6 +375,7 @@ pub fn generate_ddl(schema: &AuthSchema) -> Vec<String> {
 }
 
 /// Convert a FieldType to a SQL type string (SQLite-compatible).
+#[allow(dead_code)]
 fn field_type_to_sql(field_type: &FieldType) -> &'static str {
     match field_type {
         FieldType::String => "TEXT",
@@ -398,87 +399,29 @@ fn format_default(value: &serde_json::Value) -> String {
 }
 
 /// Create/migrate the schema in the database.
+///
+/// Uses the new multi-DB migration system for introspection and diffing.
 pub async fn create_schema(
     pool: &AnyPool,
     schema: &AuthSchema,
     options: &SchemaOptions,
 ) -> AdapterResult<SchemaStatus> {
-    let ddl_statements = generate_ddl(schema);
-    let mut migration_statements = Vec::new();
+    let db_type = crate::migration::detect_db_type(pool);
 
-    for stmt in &ddl_statements {
-        if options.auto_migrate {
-            sqlx::query(stmt)
-                .execute(pool)
-                .await
-                .map_err(|e| BetterAuthError::Other(format!("DDL execution failed: {e}")))?;
-        }
-        migration_statements.push(stmt.clone());
+    let plan = crate::migration::get_migrations(pool, schema, db_type, IdStrategy::NanoId)
+        .await?;
+
+    if !plan.has_pending() {
+        return Ok(SchemaStatus::UpToDate);
     }
 
-    let alter_statements = check_missing_columns(pool, schema).await?;
-    if !alter_statements.is_empty() {
-        if options.auto_migrate {
-            for stmt in &alter_statements {
-                sqlx::query(stmt)
-                    .execute(pool)
-                    .await
-                    .map_err(|e| {
-                        BetterAuthError::Other(format!("ALTER execution failed: {e}"))
-                    })?;
-            }
-        }
-        migration_statements.extend(alter_statements);
+    if options.auto_migrate {
+        plan.run(pool).await?;
     }
 
-    if migration_statements.is_empty() {
-        Ok(SchemaStatus::UpToDate)
-    } else {
-        Ok(SchemaStatus::NeedsMigration {
-            statements: migration_statements,
-        })
-    }
-}
-
-/// Check for columns defined in the schema but missing from the database.
-async fn check_missing_columns(
-    pool: &AnyPool,
-    schema: &AuthSchema,
-) -> AdapterResult<Vec<String>> {
-    let mut alter_stmts = Vec::new();
-
-    for (table_name, table) in &schema.tables {
-        let pragma_sql = format!("PRAGMA table_info({})", query_builder::quote_identifier(table_name));
-        let rows = match sqlx::query(&pragma_sql).fetch_all(pool).await {
-            Ok(rows) => rows,
-            Err(_) => continue,
-        };
-
-        let existing_columns: Vec<String> = rows
-            .iter()
-            .filter_map(|row| row.try_get::<String, _>("name").ok())
-            .collect();
-
-        for (field_name, field) in &table.fields {
-            if !existing_columns.contains(field_name) {
-                let sql_type = field_type_to_sql(&field.field_type);
-                let mut alter = format!(
-                    "ALTER TABLE {} ADD COLUMN {} {}",
-                    query_builder::quote_identifier(table_name),
-                    query_builder::quote_identifier(field_name),
-                    sql_type
-                );
-
-                if let Some(ref default) = field.default_value {
-                    alter.push_str(&format!(" DEFAULT {}", format_default(default)));
-                }
-
-                alter_stmts.push(alter);
-            }
-        }
-    }
-
-    Ok(alter_stmts)
+    Ok(SchemaStatus::NeedsMigration {
+        statements: plan.statements,
+    })
 }
 
 #[cfg(test)]

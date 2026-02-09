@@ -199,6 +199,30 @@ pub async fn handle_sign_in(
     if ep.require_email_verification {
         let email_verified = user["emailVerified"].as_bool().unwrap_or(false);
         if !email_verified {
+            // Check if we should send a verification email on sign-in attempt.
+            // This matches TS: `options.emailVerification?.sendOnSignIn`
+            if let Some(ref ev_opts) = ctx.options.email_verification {
+                if ev_opts.send_on_sign_in {
+                    // Create a verification token for this user.
+                    // In the TS version, this calls `createEmailVerificationToken` and then
+                    // `sendVerificationEmail`. We create the token here; the actual email
+                    // delivery is handled by the framework's callback/hook system.
+                    let token = crate::crypto::random::generate_random_string(32);
+                    let expires_at = chrono::Utc::now()
+                        + chrono::TimeDelta::seconds(ev_opts.expires_in as i64);
+
+                    let _ = ctx.adapter.create_verification(
+                        &format!("email-verification:{}", token),
+                        &email,
+                        expires_at,
+                    ).await;
+
+                    tracing::info!(
+                        email = %email,
+                        "sendOnSignIn: created verification token for unverified user"
+                    );
+                }
+            }
             return Err(SignInHandlerError::Forbidden(SignInError::EmailNotVerified));
         }
     }

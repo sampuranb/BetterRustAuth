@@ -225,7 +225,15 @@ pub async fn handle_auth_request(
     request: GenericRequest,
 ) -> GenericResponse {
     // 1. Strip base_path to get the route path
-    let route_path = strip_base_path(&request.path, &ctx.base_path);
+    let mut route_path = strip_base_path(&request.path, &ctx.base_path);
+
+    // 1b. Normalize trailing slashes if enabled (matches TS `skipTrailingSlashes`)
+    if ctx.options.advanced.skip_trailing_slashes && route_path.len() > 1 {
+        route_path = route_path.trim_end_matches('/').to_string();
+        if route_path.is_empty() {
+            route_path = "/".to_string();
+        }
+    }
 
     // 2. Run origin check middleware
     let origin_headers = request

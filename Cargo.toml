@@ -23,6 +23,10 @@ members = [
     "crates/better-auth-diesel",
     "crates/better-auth-sea-orm",
     "crates/better-auth-mongodb",
+    "crates/better-auth-telemetry",
+    "crates/better-auth-test-utils",
+    "crates/better-auth-electron",
+    "crates/better-auth-expo",
 ]
 
 [workspace.package]

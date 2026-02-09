@@ -696,6 +696,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "better-auth-electron"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "sha2",
+ "subtle",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "better-auth-expo"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "better-auth-i18n"
 version = "0.1.0"
 dependencies = [
@@ -897,6 +922,36 @@ dependencies = [
  "sha2",
  "subtle",
  "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "better-auth-telemetry"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "better-auth-core",
+ "chrono",
+ "rand 0.8.5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "better-auth-test-utils"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
  "tokio",
  "tracing",
  "uuid",
