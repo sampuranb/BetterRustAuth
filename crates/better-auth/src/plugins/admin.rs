@@ -636,7 +636,7 @@ impl BetterAuthPlugin for AdminPlugin {
                 #[serde(rename_all = "camelCase")]
                 struct Body { user_id: String }
                 let body: Body = match serde_json::from_value(req.body.clone()) { Ok(b) => b, Err(e) => return PluginHandlerResponse::error(400, "BAD_REQUEST", &format!("{}", e)) };
-                match ctx.adapter.update_user(&body.user_id, serde_json::json!({"banned": false, "banReason": null::<String>, "banExpires": null::<String>})).await {
+                match ctx.adapter.update_user(&body.user_id, serde_json::json!({"banned": false, "banReason": null, "banExpires": null})).await {
                     Ok(u) => PluginHandlerResponse::ok(u),
                     Err(e) => PluginHandlerResponse::error(500, "INTERNAL_ERROR", &format!("{}", e)),
                 }

@@ -1,8 +1,8 @@
 # Better Auth — Rust vs Original (TypeScript) Parity Analysis
 
-**Generated:** 2026-02-09 (Updated: 2026-02-10 — All Phases Complete)  
+**Generated:** 2026-02-09 (Updated: 2026-02-10 — All Phases Complete + ORM Compatibility Adapters)  
 **Method:** Exhaustive file-by-file, function-by-function code scan of both codebases  
-**Build Status:** ✅ Compiles cleanly | ✅ All 241 tests pass
+**Build Status:** ✅ Compiles cleanly | ✅ All 275 tests pass
 
 ---
 
@@ -10,25 +10,26 @@
 
 | Metric | Original (TS) | Rust Rewrite |
 |--------|---------------|--------------|
-| **Source lines (non-test)** | ~100,816 | ~70,082 |
-| **Source files** | ~380 .ts files | ~241 .rs files |
-| **Packages / Crates** | 19 packages | 26 crates |
+| **Source lines (non-test)** | ~100,816 | ~72,535 |
+| **Source files** | ~380 .ts files | ~252 .rs files |
+| **Packages / Crates** | 19 packages | 29 crates |
 | **Plugins** | 27 plugins | 27 plugins ✅ |
 | **Social Providers** | 33 providers | 33 providers ✅ |
 | **API Routes (core)** | 10 route files | 13 route files ✅ |
-| **Database Adapters** | 5 (Kysely, Drizzle, Prisma, MongoDB, Memory) | 5 (SQLx, Diesel, Sea-ORM, MongoDB, Memory) ✅ |
+| **Database Adapters** | 5 (Kysely, Drizzle, Prisma, MongoDB, Memory) | 8 (SQLx, Diesel, Sea-ORM, MongoDB, Memory + Drizzle/Kysely/Prisma compat) ✅ |
 | **Framework Integrations** | 7 (Next.js, SvelteKit, SolidStart, Node, Tanstack, etc.) | 5 (Axum, Actix, Leptos, Dioxus, Yew) ✅ |
 | **Client SDK** | 1 (JS with React/Vue/Solid/Svelte bindings) | 1 (Rust client with 18 plugin extensions) ✅ |
 | **Companion Packages** | 4 (Electron, Expo, Telemetry, Test Utils) | 4 (Electron, Expo, Telemetry, Test Utils) ✅ |
-| **Test count** | 119 .test.ts files | 241 tests (+ 12 test files with inline #[test]) |
+| **ORM Compatibility Adapters** | N/A (native JS ORMs) | 3 (Drizzle, Kysely, Prisma — migration bridges) ✅ |
+| **Test count** | 119 .test.ts files | 275 tests (+ 12 test files with inline #[test]) |
 | **`todo!`/`unimplemented!` markers** | N/A | **0** ✅ |
 | **`TODO` comments** | N/A | **1** (minor: send verification email in update_user.rs) |
 
 ---
 
-## Overall Completion: **~95%**
+## Overall Completion: **~96%**
 
-**Progress History:** 73% → 82% (Phase 1) → 88% (Phase 2) → 92% (Phase 3) → **95% (Phase 4)**
+**Progress History:** 73% → 82% (Phase 1) → 88% (Phase 2) → 92% (Phase 3) → 95% (Phase 4) → **96% (Phase 4+)**
 
 ---
 
@@ -111,6 +112,9 @@ All 27 plugins from the TS version exist in Rust:
 | Adapter - MongoDB | `mongo-adapter/` | `better-auth-mongodb/` (4 files) | ✅ 88% | MongoDB adapter |
 | Adapter - Memory | `memory-adapter/` | `better-auth-memory/` (3 files) | ✅ 88% | In-memory adapter |
 | Adapter - Redis (Storage) | `redis-storage/` | `better-auth-redis/` (3 files) | ✅ 88% | Redis secondary storage |
+| Compat - Drizzle | `drizzle-adapter/` (1 file) | `better-auth-drizzle/` (4 files) | ✅ 90% | Wraps SQLx, snake_case/camelCase/plural naming, SQL migration reader (15 tests) |
+| Compat - Kysely | `kysely-adapter/` (1 file) | `better-auth-kysely/` (3 files) | ✅ 90% | Wraps SQLx, snake_case naming, database type config (7 tests) |
+| Compat - Prisma | `prisma-adapter/` (1 file) | `better-auth-prisma/` (4 files) | ✅ 90% | Wraps SQLx, Prisma schema reader, P2025 error swallowing (12 tests) |
 
 ### 5. OAuth2 Layer (✅ 90%)
 
@@ -180,9 +184,9 @@ All 27 plugins from the TS version exist in Rust:
 | Expo | `better-auth-expo/` (3 files) | ✅ 90% | Origin override, callback redirect processing, authorization proxy (11 tests) |
 | Telemetry | `better-auth-telemetry/` (5 files) | ✅ 90% | Runtime/database/framework/system detection, project ID generation, event publishing (14 tests) |
 | Test Utils | `better-auth-test-utils/` (4 files) | ✅ 88% | TestSuite, TestAdapter, model generators, deep_merge, sort_models, utility functions (11 tests) |
-| Drizzle Adapter | N/A | N/A | JS-specific ORM, SQLx/Diesel/Sea-ORM cover this |
-| Kysely Adapter | N/A | N/A | JS-specific ORM |
-| Prisma Adapter | N/A | N/A | JS-specific ORM |
+| Drizzle Adapter | `drizzle-adapter/` | `better-auth-drizzle/` (4 files) | ✅ 90% | Migration bridge — wraps SQLx, applies Drizzle naming conventions (15 tests) |
+| Kysely Adapter | `kysely-adapter/` | `better-auth-kysely/` (3 files) | ✅ 90% | Migration bridge — wraps SQLx, applies Kysely naming conventions (7 tests) |
+| Prisma Adapter | `prisma-adapter/` | `better-auth-prisma/` (4 files) | ✅ 90% | Migration bridge — wraps SQLx, parses .prisma schema, Prisma naming (12 tests) |
 
 ---
 
@@ -260,7 +264,7 @@ All 27 plugins from the TS version exist in Rust:
 
 | Dimension | TS | Rust |
 |-----------|-----|------|
-| Total tests | 119 .test.ts files | **241 tests passing** ✅ |
+| Total tests | 119 .test.ts files | **275 tests passing** ✅ |
 | Unit test files | 119 .test.ts files | 12 test files + inline `#[cfg(test)]` modules |
 | Integration test files | `e2e/` directory (141 files) | Per-adapter integration tests |
 | Adapter test suites | `create-test-suite.ts` generic suite | `better-auth-test-utils` crate + per-adapter tests |
@@ -282,8 +286,11 @@ All 27 plugins from the TS version exist in Rust:
 | better-auth-test-utils | 11 |
 | better-auth-electron | 12 |
 | better-auth-expo | 11 |
+| better-auth-drizzle | 15 |
+| better-auth-prisma | 12 |
+| better-auth-kysely | 7 |
 | Other crates | 29 |
-| **Total** | **241** |
+| **Total** | **275** |
 
 ---
 
@@ -301,15 +308,15 @@ Each category is scored on:
 | Core Architecture | 15% | 92% | 13.8% |
 | Core Routes | 15% | 90% | 13.5% |
 | Plugins (27) | 20% | 88% | 17.6% |
-| Database Layer | 10% | 90% | 9.0% |
+| Database Layer | 10% | 92% | 9.2% |
 | OAuth2 Layer | 10% | 90% | 9.0% |
 | Crypto/Security | 5% | 90% | 4.5% |
 | Cookie Management | 5% | 88% | 4.4% |
 | Framework Integrations | 5% | 82% | 4.1% |
 | Client SDK | 5% | 85% | 4.25% |
-| Companion Packages | 5% | 88% | 4.4% |
-| Testing | 5% | 75% | 3.75% |
-| **TOTAL** | **100%** | | **88.3%** |
+| Companion Packages | 5% | 90% | 4.5% |
+| Testing | 5% | 78% | 3.9% |
+| **TOTAL** | **100%** | | **89.25%** |
 
 ### Adjusted Score with Behavioral Fixes Applied
 
@@ -322,9 +329,9 @@ The raw structural score of **~88%** is **adjusted upward** because all P0/P1/P2
 
 ---
 
-# ✅ Final Parity Score: **~95%**
+# ✅ Final Parity Score: **~96%**
 
-**Progress:** 73% → 82% → 88% → 92% → **95%**
+**Progress:** 73% → 82% → 88% → 92% → 95% → **96%**
 
 ---
 
@@ -360,10 +367,15 @@ The raw structural score of **~88%** is **adjusted upward** because all P0/P1/P2
 21. ✅ Add telemetry crate — `better-auth-telemetry` (6 detectors, project ID, event publishing — 14 tests)
 22. ✅ Add test-utils crate — `better-auth-test-utils` (TestSuite, TestAdapter, model generators — 11 tests)
 
-### Phase 5: Final 5% (→ 100%)
-23. Implement verification email on email change in `update_user.rs`
-24. Dynamic per-request base URL from `X-Forwarded-Host`/`X-Forwarded-Proto` proxy headers
-25. Full locale string coverage in `better-auth-i18n`
-26. Deepen Leptos/Dioxus/Yew framework integrations
-27. Significantly expand integration and E2E test coverage
-28. Match all remaining edge-case behaviors from TS (lifecycle callback closures, etc.)
+### Phase 4+: ORM Compatibility Adapters (→ 96%) ✅ COMPLETED
+23. ✅ Add Drizzle compatibility adapter — `better-auth-drizzle` (wraps SQLx, snake_case/camelCase/plural naming, SQL migration reader — 15 tests)
+24. ✅ Add Kysely compatibility adapter — `better-auth-kysely` (wraps SQLx, snake_case naming, database type config — 7 tests)
+25. ✅ Add Prisma compatibility adapter — `better-auth-prisma` (wraps SQLx, Prisma schema reader, P2025 error swallowing — 12 tests)
+
+### Phase 5: Final 4% (→ 100%)
+26. Implement verification email on email change in `update_user.rs`
+27. Dynamic per-request base URL from `X-Forwarded-Host`/`X-Forwarded-Proto` proxy headers
+28. Full locale string coverage in `better-auth-i18n`
+29. Deepen Leptos/Dioxus/Yew framework integrations
+30. Significantly expand integration and E2E test coverage
+31. Match all remaining edge-case behaviors from TS (lifecycle callback closures, etc.)

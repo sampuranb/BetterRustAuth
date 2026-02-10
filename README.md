@@ -182,7 +182,7 @@ GET  /api/auth/error                # Error page
 
 ```
 BetterRustAuth/
-├── Cargo.toml                      # Workspace root (26 crates)
+├── Cargo.toml                      # Workspace root (29 crates)
 ├── crates/
 │   ├── better-auth-core/           # Core types, options, hooks, logger
 │   ├── better-auth/                # Main library — routes, plugins, middleware, handler
@@ -200,6 +200,10 @@ BetterRustAuth/
 │   ├── better-auth-mongodb/        # MongoDB adapter
 │   ├── better-auth-memory/         # In-memory adapter (dev/testing)
 │   ├── better-auth-redis/          # Redis secondary storage
+│   │
+│   ├── better-auth-drizzle/        # Drizzle ORM compatibility adapter (migration bridge)
+│   ├── better-auth-kysely/         # Kysely compatibility adapter (migration bridge)
+│   ├── better-auth-prisma/         # Prisma compatibility adapter (migration bridge)
 │   │
 │   ├── better-auth-client/         # Rust client SDK with plugin extensions
 │   ├── better-auth-cli/            # CLI tool for migrations and management
@@ -317,6 +321,23 @@ better-auth-mongodb = "0.1"
 [dependencies]
 better-auth-memory = "0.1"
 ```
+
+### Migration Compatibility Adapters
+
+For teams migrating from the TypeScript `better-auth` — these adapters wrap SQLx internally and apply the same table/column naming conventions as their JS counterparts, making the Rust version a **drop-in replacement** that works with your existing database:
+
+```toml
+# If you were using drizzleAdapter() in TS:
+better-auth-drizzle = "0.1"
+
+# If you were using kyselyAdapter() in TS:
+better-auth-kysely = "0.1"
+
+# If you were using prismaAdapter() in TS:
+better-auth-prisma = "0.1"
+```
+
+Each includes schema readers that parse your existing Drizzle migrations (SQL), Kysely migrations, or Prisma `.prisma` schema files to validate compatibility.
 
 ---
 
@@ -489,18 +510,18 @@ This is a faithful, feature-complete port of the original [better-auth](https://
 
 | Metric | Original (TS) | Rust Rewrite |
 |--------|---------------|--------------|
-| **Source lines** | ~100,816 | ~70,082 |
-| **Source files** | ~380 .ts files | ~241 .rs files |
-| **Crates** | 19 packages | 26 crates |
+| **Source lines** | ~100,816 | ~72,535 |
+| **Source files** | ~380 .ts files | ~252 .rs files |
+| **Crates** | 19 packages | 29 crates |
 | **Plugins** | 27 | 27 ✅ |
 | **OAuth Providers** | 33 | 33 ✅ |
 | **API Routes (core)** | 10 | 13 ✅ |
-| **Database Adapters** | 5 | 5 ✅ |
+| **Database Adapters** | 5 (Drizzle, Kysely, Prisma, MongoDB, Memory) | 8 (SQLx, Diesel, SeaORM, MongoDB, Memory + Drizzle/Kysely/Prisma compat) ✅ |
 | **Framework Integrations** | 7 | 5 ✅ |
 | **Client SDK** | 1 | 1 ✅ |
 | **Companion Packages** | 4 | 4 ✅ |
-| **Tests** | 119 test files | 241 tests passing ✅ |
-| **Overall parity** | — | **~95%** |
+| **Tests** | 119 test files | 275 tests passing ✅ |
+| **Overall parity** | — | **~96%** |
 
 For a detailed breakdown, see [completion.md](./completion.md).
 
@@ -530,13 +551,14 @@ cargo test -p better-auth --all-features
 
 ## Project Status
 
-This project is a **95% feature-complete port** of the original TypeScript library. The core authentication flows, all 27 plugins, all 33 OAuth providers, and all 4 companion packages are implemented and compile successfully. **241 tests pass across 26 crates.**
+This project is a **~96% feature-complete port** of the original TypeScript library. The core authentication flows, all 27 plugins, all 33 OAuth providers, all 4 companion packages, and all 3 TS adapter compatibility bridges are implemented and compile successfully. **275 tests pass across 29 crates.**
 
 ### What's Complete ✅
 - All core routes (sign-up, sign-in, sessions, passwords, email verification, account management)
 - All 27 plugins with feature-gate support
 - All 33 OAuth providers
-- 5 database adapters (SQLx, Diesel, SeaORM, MongoDB, Memory)
+- 5 native database adapters (SQLx, Diesel, SeaORM, MongoDB, Memory)
+- 3 migration compatibility adapters (Drizzle, Kysely, Prisma) — drop-in replacement for TS version
 - 5 framework integrations (Axum, Actix, Leptos, Dioxus, Yew)
 - Client SDK with 18 plugin extensions
 - Migration schema auto-generation with differential DB introspection
@@ -549,7 +571,8 @@ This project is a **95% feature-complete port** of the original TypeScript libra
 - Expo companion crate (`better-auth-expo`) — origin override, callback redirect, auth proxy (11 tests)
 - Telemetry crate (`better-auth-telemetry`) — runtime/system/database/framework detection, project ID (14 tests)
 - Test utilities crate (`better-auth-test-utils`) — test suite runner, model generators, deep merge (11 tests)
-- 241 tests passing across all crates
+- Drizzle/Kysely/Prisma compatibility adapters with schema readers and naming convention translation (34 tests)
+- 275 tests passing across all crates
 
 ### What's In Progress 🚧
 - Additional integration and E2E tests

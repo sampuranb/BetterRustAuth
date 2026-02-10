@@ -366,7 +366,7 @@ impl BetterAuthPlugin for DeviceAuthorizationPlugin {
                     "userCode": user_code,
                     "status": "pending",
                     "expiresAt": expires_at.to_rfc3339(),
-                    "lastPolledAt": null::<String>,
+                    "lastPolledAt": null,
                     "createdAt": now.to_rfc3339(),
                     "updatedAt": now.to_rfc3339(),
                 });
