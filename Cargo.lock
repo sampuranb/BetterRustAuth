@@ -696,6 +696,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "better-auth-drizzle"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "better-auth-core",
+ "better-auth-sqlx",
+ "regex",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "better-auth-electron"
 version = "0.1.0"
 dependencies = [
@@ -727,6 +742,21 @@ dependencies = [
  "better-auth-core",
  "serde",
  "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "better-auth-kysely"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "better-auth-core",
+ "better-auth-sqlx",
+ "regex",
+ "serde",
+ "serde_json",
+ "sqlx",
  "tokio",
  "tracing",
 ]
@@ -828,6 +858,21 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "better-auth-prisma"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "better-auth-core",
+ "better-auth-sqlx",
+ "regex",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

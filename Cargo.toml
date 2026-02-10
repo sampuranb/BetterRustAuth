@@ -27,6 +27,9 @@ members = [
     "crates/better-auth-test-utils",
     "crates/better-auth-electron",
     "crates/better-auth-expo",
+    "crates/better-auth-drizzle",
+    "crates/better-auth-kysely",
+    "crates/better-auth-prisma",
 ]
 
 [workspace.package]
