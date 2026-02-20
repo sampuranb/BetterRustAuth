@@ -75,6 +75,7 @@ mod tests {
             cookie_cache_enabled: options.session.cookie_cache.enabled,
             cookie_refresh_cache: better_auth_core::options::CookieRefreshCacheConfig::Disabled,
             defer_session_refresh: false,
+            disable_session_refresh: false,
         };
         Arc::new(AuthContext {
             app_name: "Better Auth".into(),

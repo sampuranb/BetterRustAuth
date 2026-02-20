@@ -342,6 +342,8 @@ pub static GOOGLE: ProviderConfig = ProviderConfig {
     profile_mapping: SUB_MAPPING,
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- GitHub ---
@@ -364,6 +366,8 @@ pub static GITHUB: ProviderConfig = ProviderConfig {
     },
     extra_userinfo_headers: &[("User-Agent", "better-auth")],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Apple ---
@@ -379,6 +383,8 @@ pub static APPLE: ProviderConfig = ProviderConfig {
     profile_mapping: SUB_MAPPING,
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: Some("form_post"),
+    userinfo_post_body: None,
 };
 
 // --- Discord ---
@@ -401,6 +407,8 @@ pub static DISCORD: ProviderConfig = ProviderConfig {
     },
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Twitter / X ---
@@ -423,6 +431,8 @@ pub static TWITTER: ProviderConfig = ProviderConfig {
     },
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Microsoft Entra ID ---
@@ -438,6 +448,8 @@ pub static MICROSOFT: ProviderConfig = ProviderConfig {
     profile_mapping: SUB_MAPPING,
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Facebook ---
@@ -453,6 +465,8 @@ pub static FACEBOOK: ProviderConfig = ProviderConfig {
     profile_mapping: DEFAULT_MAPPING,
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Spotify ---
@@ -475,6 +489,8 @@ pub static SPOTIFY: ProviderConfig = ProviderConfig {
     },
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Twitch ---
@@ -490,6 +506,8 @@ pub static TWITCH: ProviderConfig = ProviderConfig {
     profile_mapping: SUB_MAPPING,
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- LinkedIn ---
@@ -505,6 +523,8 @@ pub static LINKEDIN: ProviderConfig = ProviderConfig {
     profile_mapping: SUB_MAPPING,
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- GitLab ---
@@ -527,6 +547,8 @@ pub static GITLAB: ProviderConfig = ProviderConfig {
     },
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- TikTok ---
@@ -549,6 +571,8 @@ pub static TIKTOK: ProviderConfig = ProviderConfig {
     },
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Reddit ---
@@ -571,6 +595,8 @@ pub static REDDIT: ProviderConfig = ProviderConfig {
     },
     extra_userinfo_headers: &[("User-Agent", "better-auth")],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Slack ---
@@ -586,6 +612,8 @@ pub static SLACK: ProviderConfig = ProviderConfig {
     profile_mapping: SUB_MAPPING,
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Dropbox ---
@@ -608,6 +636,8 @@ pub static DROPBOX: ProviderConfig = ProviderConfig {
     },
     extra_userinfo_headers: &[],
     userinfo_is_post: true,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Notion ---
@@ -630,6 +660,8 @@ pub static NOTION: ProviderConfig = ProviderConfig {
     },
     extra_userinfo_headers: &[("Notion-Version", "2022-06-28")],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Zoom ---
@@ -652,6 +684,8 @@ pub static ZOOM: ProviderConfig = ProviderConfig {
     },
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Roblox ---
@@ -674,6 +708,8 @@ pub static ROBLOX: ProviderConfig = ProviderConfig {
     },
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Cognito ---
@@ -689,6 +725,8 @@ pub static COGNITO: ProviderConfig = ProviderConfig {
     profile_mapping: SUB_MAPPING,
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Figma ---
@@ -711,6 +749,8 @@ pub static FIGMA: ProviderConfig = ProviderConfig {
     },
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Salesforce ---
@@ -733,6 +773,8 @@ pub static SALESFORCE: ProviderConfig = ProviderConfig {
     },
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- VK ---
@@ -755,6 +797,8 @@ pub static VK: ProviderConfig = ProviderConfig {
     },
     extra_userinfo_headers: &[],
     userinfo_is_post: true,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Hugging Face ---
@@ -770,6 +814,8 @@ pub static HUGGINGFACE: ProviderConfig = ProviderConfig {
     profile_mapping: SUB_MAPPING,
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Atlassian ---
@@ -792,6 +838,8 @@ pub static ATLASSIAN: ProviderConfig = ProviderConfig {
     },
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Kakao ---
@@ -814,6 +862,8 @@ pub static KAKAO: ProviderConfig = ProviderConfig {
     },
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Naver ---
@@ -836,6 +886,8 @@ pub static NAVER: ProviderConfig = ProviderConfig {
     },
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- LINE ---
@@ -858,6 +910,8 @@ pub static LINE: ProviderConfig = ProviderConfig {
     },
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Linear ---
@@ -880,6 +934,8 @@ pub static LINEAR: ProviderConfig = ProviderConfig {
     },
     extra_userinfo_headers: &[],
     userinfo_is_post: true,
+    response_mode: None,
+    userinfo_post_body: Some("{\"query\":\"{ viewer { id name email avatarUrl } }\"}"),
 };
 
 // --- Kick ---
@@ -902,6 +958,8 @@ pub static KICK: ProviderConfig = ProviderConfig {
     },
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- PayPal ---
@@ -924,6 +982,8 @@ pub static PAYPAL: ProviderConfig = ProviderConfig {
     },
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Paybin ---
@@ -939,6 +999,8 @@ pub static PAYBIN: ProviderConfig = ProviderConfig {
     profile_mapping: DEFAULT_MAPPING,
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Polar ---
@@ -954,6 +1016,8 @@ pub static POLAR: ProviderConfig = ProviderConfig {
     profile_mapping: SUB_MAPPING,
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 // --- Vercel ---
@@ -976,6 +1040,8 @@ pub static VERCEL: ProviderConfig = ProviderConfig {
     },
     extra_userinfo_headers: &[],
     userinfo_is_post: false,
+    response_mode: None,
+    userinfo_post_body: None,
 };
 
 /// Lookup a provider config by its ID string.

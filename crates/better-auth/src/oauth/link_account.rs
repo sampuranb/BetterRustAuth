@@ -333,6 +333,7 @@ mod tests {
                 cookie_cache_enabled: false,
                 cookie_refresh_cache: better_auth_core::options::CookieRefreshCacheConfig::Disabled,
                 defer_session_refresh: false,
+                disable_session_refresh: false,
             },
             oauth_config: crate::context::OAuthConfig {
                 store_state_strategy: "database".into(),

@@ -427,7 +427,7 @@ async fn handle_plugin_dispatch(
         match &session_token {
             Some(token) => {
                 match routes::session::handle_get_session(
-                    (**ctx).clone(), token, GetSessionOptions::default()
+                    (**ctx).clone(), token, GetSessionOptions::default(), None
                 ).await {
                     Ok(result) => {
                         match result.response {
@@ -456,7 +456,7 @@ async fn handle_plugin_dispatch(
         // Try to get session anyway (optional auth)
         if let Some(ref token) = session_token {
             routes::session::handle_get_session(
-                (**ctx).clone(), token, GetSessionOptions::default()
+                (**ctx).clone(), token, GetSessionOptions::default(), None
             ).await.ok().and_then(|r| r.response).map(|s| serde_json::json!({
                 "user": s.user,
                 "session": s.session,
@@ -601,7 +601,7 @@ async fn require_session(
     token: &str,
 ) -> Result<SessionResponse, ApiError> {
     let result =
-        routes::session::handle_get_session(ctx.clone(), token, GetSessionOptions::default())
+        routes::session::handle_get_session(ctx.clone(), token, GetSessionOptions::default(), None)
             .await?;
     result.response.ok_or_else(|| ApiError {
         status: actix_web::http::StatusCode::UNAUTHORIZED,
@@ -722,10 +722,12 @@ async fn handle_get_session(
         None => return Ok(HttpResponse::Ok().json(serde_json::Value::Null)),
     };
 
+    let cookie_hdr = req.headers().get("cookie").and_then(|v| v.to_str().ok());
     let result = routes::session::handle_get_session(
         ctx.get_ref().clone(),
         &token,
         GetSessionOptions::default(),
+        cookie_hdr,
     )
     .await?;
 

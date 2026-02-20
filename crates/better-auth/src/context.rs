@@ -126,6 +126,8 @@ pub struct SessionConfig {
     pub cookie_refresh_cache: CookieRefreshCacheConfig,
     /// Whether to defer session refresh to POST requests.
     pub defer_session_refresh: bool,
+    /// Whether session refresh is globally disabled.
+    pub disable_session_refresh: bool,
 }
 
 /// OAuth configuration resolved from options.
@@ -201,6 +203,7 @@ impl AuthContext {
             cookie_cache_enabled: options.session.cookie_cache.enabled,
             cookie_refresh_cache: CookieRefreshCacheConfig::Disabled,
             defer_session_refresh: options.session.defer_session_refresh,
+            disable_session_refresh: options.session.disable_session_refresh,
         };
 
         let oauth_config = OAuthConfig {

@@ -271,6 +271,7 @@ impl AuthContextBuilder {
             cookie_cache_enabled: self.options.session.cookie_cache.enabled,
             cookie_refresh_cache,
             defer_session_refresh: self.options.session.defer_session_refresh,
+            disable_session_refresh: self.options.session.disable_session_refresh,
         };
 
         // 6. Build OAuth config

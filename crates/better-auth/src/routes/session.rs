@@ -79,6 +79,8 @@ pub struct GetSessionResult {
     pub delete_session_cookie: bool,
     /// If true, the caller should expire the session data cookie (cache).
     pub expire_session_data_cookie: bool,
+    /// If true, the caller should set/refresh the cookie cache for the session.
+    pub set_cookie_cache: bool,
 }
 
 /// Instruction to set a session cookie.
@@ -122,16 +124,18 @@ pub fn is_session_fresh(session: &serde_json::Value, fresh_age_secs: u64) -> boo
 /// Handle get-session.
 ///
 /// Full implementation matching TS `getSession`:
-/// 1. Look up session + user by token
-/// 2. Check if session has expired (clean up if so)
-/// 3. Handle `dontRememberMe` / `disableRefresh` early return
-/// 4. Sliding window refresh: if session is due to be updated, extend expiry
-/// 5. Handle deferred session refresh (GET vs POST distinction)
-/// 6. Return session and user data
+/// 1. Check cookie cache first (if enabled and not bypassed)
+/// 2. Look up session + user by token from DB
+/// 3. Check if session has expired (clean up if so)
+/// 4. Handle `dontRememberMe` / `disableRefresh` early return
+/// 5. Sliding window refresh: if session is due to be updated, extend expiry
+/// 6. Handle deferred session refresh (GET vs POST distinction)
+/// 7. Return session and user data
 pub async fn handle_get_session(
     ctx: Arc<AuthContext>,
     session_token: &str,
     options: GetSessionOptions,
+    cookie_header: Option<&str>,
 ) -> Result<GetSessionResult, AdapterError> {
     let defer_session_refresh = ctx.session_config.defer_session_refresh;
 
@@ -142,9 +146,46 @@ pub async fn handle_get_session(
             set_session_cookie: None,
             delete_session_cookie: false,
             expire_session_data_cookie: false,
+            set_cookie_cache: false,
         });
     }
 
+    // ── Cookie Cache Check ──────────────────────────────────────────────
+    // If cookie cache is enabled and not bypassed, try to return from cache
+    if ctx.session_config.cookie_cache_enabled
+        && !options.query.disable_cookie_cache
+    {
+        if let Some(header) = cookie_header {
+            if let Some(cached) = crate::cookies::get_cookie_cache(
+                header,
+                &ctx.auth_cookies,
+                &ctx.secret,
+            ) {
+                // Check if the cached session has expired
+                let cached_expired = parse_datetime_field(&cached.session, "expiresAt")
+                    .map(|e| e < Utc::now())
+                    .unwrap_or(false);
+
+                if !cached_expired {
+                    return Ok(GetSessionResult {
+                        response: Some(SessionResponse {
+                            session: cached.session,
+                            user: cached.user,
+                            needs_refresh: None,
+                        }),
+                        set_session_cookie: None,
+                        delete_session_cookie: false,
+                        expire_session_data_cookie: false,
+                        set_cookie_cache: false,
+                    });
+                } else {
+                    // Cached session expired — expire the cache cookie and fall through to DB
+                }
+            }
+        }
+    }
+
+    // ── DB Lookup ────────────────────────────────────────────────────────
     // 1. Find session and user
     let session_user = match ctx.adapter.find_session_and_user(session_token).await? {
         Some(su) => su,
@@ -154,6 +195,7 @@ pub async fn handle_get_session(
                 set_session_cookie: None,
                 delete_session_cookie: true,
                 expire_session_data_cookie: false,
+                set_cookie_cache: false,
             });
         }
     };
@@ -172,12 +214,14 @@ pub async fn handle_get_session(
                 set_session_cookie: None,
                 delete_session_cookie: true,
                 expire_session_data_cookie: false,
+                set_cookie_cache: false,
             });
         }
     }
 
     // 3. If dontRememberMe or disableRefresh, return session as-is
-    let disable_refresh = options.query.disable_refresh;
+    let disable_refresh = options.query.disable_refresh
+        || ctx.session_config.disable_session_refresh;
 
     if options.dont_remember_me || disable_refresh {
         return Ok(GetSessionResult {
@@ -189,6 +233,7 @@ pub async fn handle_get_session(
             set_session_cookie: None,
             delete_session_cookie: false,
             expire_session_data_cookie: false,
+            set_cookie_cache: false,
         });
     }
 
@@ -218,6 +263,7 @@ pub async fn handle_get_session(
             set_session_cookie: None,
             delete_session_cookie: false,
             expire_session_data_cookie: false,
+            set_cookie_cache: true,
         });
     }
 
@@ -246,10 +292,11 @@ pub async fn handle_get_session(
             }),
             delete_session_cookie: false,
             expire_session_data_cookie: false,
+            set_cookie_cache: true,
         });
     }
 
-    // 7. Normal case — return session as-is
+    // 7. Normal case — return session as-is, set cache
     Ok(GetSessionResult {
         response: Some(SessionResponse {
             session: session_user.session,
@@ -259,6 +306,7 @@ pub async fn handle_get_session(
         set_session_cookie: None,
         delete_session_cookie: false,
         expire_session_data_cookie: false,
+        set_cookie_cache: true,
     })
 }
 

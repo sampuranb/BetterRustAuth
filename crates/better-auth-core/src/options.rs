@@ -326,6 +326,14 @@ pub struct SessionOptions {
     /// @default false
     #[serde(default)]
     pub preserve_session_in_database: bool,
+
+    /// Globally disable session refresh/extension.
+    ///
+    /// Maps to TS `session.disableSessionRefresh`.
+    ///
+    /// @default false
+    #[serde(default)]
+    pub disable_session_refresh: bool,
 }
 
 fn default_session_expires_in() -> u64 { 604_800 } // 7 days
@@ -342,6 +350,7 @@ impl Default for SessionOptions {
             defer_session_refresh: false,
             store_session_in_database: false,
             preserve_session_in_database: false,
+            disable_session_refresh: false,
         }
     }
 }

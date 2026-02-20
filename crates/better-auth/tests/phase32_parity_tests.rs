@@ -190,6 +190,7 @@ mod session_tests {
             set_session_cookie: None,
             delete_session_cookie: false,
             expire_session_data_cookie: false,
+            set_cookie_cache: false,
         };
         assert!(r.response.is_none());
         assert!(!r.delete_session_cookie);

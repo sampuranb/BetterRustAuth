@@ -430,7 +430,7 @@ async fn require_session(
     ctx: Arc<AuthContext>,
     token: &str,
 ) -> Result<SessionResponse, ApiError> {
-    let result = routes::session::handle_get_session(ctx, token, GetSessionOptions::default()).await?;
+    let result = routes::session::handle_get_session(ctx, token, GetSessionOptions::default(), None).await?;
     result.response.ok_or_else(|| ApiError::from(AdapterError::Database("Invalid session".into())))
 }
 
@@ -443,7 +443,8 @@ async fn handle_get_session(
         None => return Ok(Json(serde_json::json!(null)).into_response()),
     };
 
-    let result = routes::session::handle_get_session(ctx, &token, GetSessionOptions::default()).await?;
+    let cookie_hdr = headers.get("cookie").and_then(|v| v.to_str().ok());
+    let result = routes::session::handle_get_session(ctx, &token, GetSessionOptions::default(), cookie_hdr).await?;
     match result.response {
         Some(session) => Ok(Json(session).into_response()),
         None => Ok(Json(serde_json::json!(null)).into_response()),
@@ -833,7 +834,7 @@ async fn handle_plugin_dispatch(
         match &session_token {
             Some(token) => {
                 match routes::session::handle_get_session(
-                    ctx.clone(), token, GetSessionOptions::default()
+                    ctx.clone(), token, GetSessionOptions::default(), None
                 ).await {
                     Ok(result) => {
                         match result.response {
@@ -868,7 +869,7 @@ async fn handle_plugin_dispatch(
         // Try to get session anyway (optional auth)
         if let Some(ref token) = session_token {
             routes::session::handle_get_session(
-                ctx.clone(), token, GetSessionOptions::default()
+                ctx.clone(), token, GetSessionOptions::default(), None
             ).await.ok().and_then(|r| r.response).map(|s| serde_json::json!({
                 "user": s.user,
                 "session": s.session,

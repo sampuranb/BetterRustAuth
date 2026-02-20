@@ -94,6 +94,11 @@ impl GenericRequest {
         None
     }
 
+    /// Get the raw `Cookie` header value for cookie cache operations.
+    pub fn cookie_header(&self) -> Option<&str> {
+        self.header("cookie")
+    }
+
     /// Parse query parameters into a map.
     pub fn query_params(&self) -> HashMap<String, String> {
         let mut params = HashMap::new();
@@ -263,8 +268,74 @@ pub async fn handle_auth_request(
         return middleware_error_to_response(e);
     }
 
-    // 4. Route to handler
-    route_request(ctx, &route_path, &request).await
+    // 4. Plugin onRequest hooks — iterate all plugins and call on_request
+    // Matches TS: for (const plugin of ctx.options.plugins || []) { if (plugin.onRequest) { ... } }
+    {
+        let plugin_request = better_auth_core::plugin::PluginRequest {
+            method: match request.method.as_str() {
+                "GET" => better_auth_core::plugin::HttpMethod::Get,
+                "POST" => better_auth_core::plugin::HttpMethod::Post,
+                "PUT" => better_auth_core::plugin::HttpMethod::Put,
+                "DELETE" => better_auth_core::plugin::HttpMethod::Delete,
+                "PATCH" => better_auth_core::plugin::HttpMethod::Patch,
+                _ => better_auth_core::plugin::HttpMethod::Get,
+            },
+            path: route_path.clone(),
+            headers: request.headers.clone(),
+        };
+
+        for plugin_id in ctx.plugin_registry.plugin_ids() {
+            if let Some(plugin) = ctx.plugin_registry.get_plugin(plugin_id) {
+                if let Err(e) = plugin.on_request(&plugin_request).await {
+                    // Plugin signaled an error — return it as a response
+                    return GenericResponse::error(
+                        400,
+                        "PLUGIN_REQUEST_ERROR",
+                        &e.to_string(),
+                    );
+                }
+            }
+        }
+    }
+
+    // 5. Route to handler
+    let mut response = route_request(ctx.clone(), &route_path, &request).await;
+
+    // 6. Plugin onResponse hooks — iterate all plugins and call on_response
+    // Matches TS: for (const plugin of ctx.options.plugins || []) { if (plugin.onResponse) { ... } }
+    {
+        let body_value: Option<serde_json::Value> = if response.body.is_empty() {
+            None
+        } else {
+            serde_json::from_slice(&response.body).ok()
+        };
+
+        let mut plugin_response = better_auth_core::plugin::PluginResponse {
+            status: response.status,
+            headers: response
+                .headers
+                .iter()
+                .map(|(k, v)| (k.clone(), v.join(", ")))
+                .collect(),
+            body: body_value,
+        };
+
+        for plugin_id in ctx.plugin_registry.plugin_ids() {
+            if let Some(plugin) = ctx.plugin_registry.get_plugin(plugin_id) {
+                let _ = plugin.on_response(&mut plugin_response).await;
+            }
+        }
+
+        // Apply any modifications back to the response
+        response.status = plugin_response.status;
+        if let Some(body) = plugin_response.body {
+            if let Ok(serialized) = serde_json::to_vec(&body) {
+                response.body = serialized;
+            }
+        }
+    }
+
+    response
 }
 
 /// Strip the base path prefix from a request path.
@@ -336,6 +407,7 @@ async fn require_session(
         ctx,
         token,
         routes::session::GetSessionOptions::default(),
+        None,
     )
     .await
     .map_err(|e| adapter_error_to_response(e))?;
@@ -450,6 +522,7 @@ async fn route_request(
                 ctx,
                 &token,
                 routes::session::GetSessionOptions::default(),
+                request.cookie_header(),
             )
             .await
             {
@@ -667,11 +740,16 @@ async fn route_request(
                 Ok(id) => id,
                 Err(e) => return e,
             };
-            match request.json::<routes::password::ChangePasswordRequest>() {
+            match request.json::<routes::update_user::ChangePasswordRequest>() {
                 Ok(body) => {
-                    match routes::password::handle_change_password(ctx, &user_id, body).await {
-                        Ok(_) => GenericResponse::json(200, &serde_json::json!({"success": true})),
-                        Err(e) => adapter_error_to_response(e),
+                    // Pass the user value from the session for the response
+                    let user_value = session.user.clone();
+                    match routes::update_user::handle_change_password(ctx, &user_id, user_value, body).await {
+                        Ok(result) => GenericResponse::json(200, &result),
+                        Err(routes::update_user::UpdateUserError::Api(e)) => {
+                            GenericResponse::error(e.status, &e.code, &e.message)
+                        }
+                        Err(routes::update_user::UpdateUserError::Database(e)) => adapter_error_to_response(e),
                     }
                 }
                 Err(msg) => GenericResponse::error(400, "BAD_REQUEST", &msg),
@@ -711,6 +789,27 @@ async fn route_request(
                     Err(e) => adapter_error_to_response(e),
                 },
                 Err(msg) => GenericResponse::error(400, "BAD_REQUEST", &msg),
+            }
+        }
+
+        // Password reset callback — GET /reset-password/:token
+        // Maps to TS `requestPasswordResetCallback`
+        ("GET", path) if path.starts_with("/reset-password/") => {
+            let token = &path["/reset-password/".len()..];
+            if token.is_empty() {
+                return GenericResponse::error(400, "BAD_REQUEST", "Missing reset token");
+            }
+            let params = request.query_params();
+            let query = routes::password::PasswordResetCallbackQuery {
+                callback_url: params.get("callbackURL").cloned().unwrap_or_default(),
+            };
+            match routes::password::handle_password_reset_callback(ctx, token, query).await {
+                routes::password::PasswordResetCallbackResult::Redirect(url) => {
+                    GenericResponse::redirect(302, &url)
+                }
+                routes::password::PasswordResetCallbackResult::ErrorRedirect(url) => {
+                    GenericResponse::redirect(302, &url)
+                }
             }
         }
 
@@ -971,7 +1070,7 @@ async fn route_request(
             let session_token = request.session_token_with_prefix(cookie_prefix);
             let user_id_opt = if let Some(ref st) = session_token {
                 if let Ok(sess) = routes::session::handle_get_session(
-                    ctx.clone(), st, routes::session::GetSessionOptions::default(),
+                    ctx.clone(), st, routes::session::GetSessionOptions::default(), None,
                 ).await {
                     sess.response.as_ref().and_then(|s| {
                         s.user["id"].as_str().map(|id: &str| id.to_string())
