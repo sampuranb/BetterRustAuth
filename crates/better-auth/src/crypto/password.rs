@@ -5,6 +5,7 @@
 
 use rand::RngCore;
 use scrypt::{Params, scrypt};
+use unicode_normalization::UnicodeNormalization;
 
 /// Hash a password using scrypt.
 ///
@@ -12,12 +13,15 @@ use scrypt::{Params, scrypt};
 /// Matches the TypeScript implementation exactly:
 /// - N = 16384, r = 16, p = 1, dkLen = 64
 pub fn hash_password(password: &str) -> Result<String, better_auth_core::error::BetterAuthError> {
+    // NFKC-normalize for cross-compatibility with the TypeScript version
+    let password: String = password.nfkc().collect();
+
     // Generate 16 random bytes for salt
     let mut salt_bytes = [0u8; 16];
     rand::thread_rng().fill_bytes(&mut salt_bytes);
     let salt_hex = hex::encode(salt_bytes);
 
-    let key = generate_key(password, &salt_hex)?;
+    let key = generate_key(&password, &salt_hex)?;
     Ok(format!("{}:{}", salt_hex, hex::encode(key)))
 }
 
@@ -26,6 +30,9 @@ pub fn verify_password(
     hash: &str,
     password: &str,
 ) -> Result<bool, better_auth_core::error::BetterAuthError> {
+    // NFKC-normalize for cross-compatibility with the TypeScript version
+    let password: String = password.nfkc().collect();
+
     let (salt, key_hex) = hash.split_once(':').ok_or_else(|| {
         better_auth_core::error::BetterAuthError::Other("Invalid password hash format".into())
     })?;
@@ -37,7 +44,7 @@ pub fn verify_password(
             ))
         })?;
 
-    let derived_key = generate_key(password, salt)?;
+    let derived_key = generate_key(&password, salt)?;
 
     Ok(super::symmetric::constant_time_equal(&derived_key, &expected_key))
 }
@@ -52,9 +59,7 @@ fn generate_key(
         better_auth_core::error::BetterAuthError::Other(format!("Invalid scrypt params: {e}"))
     })?;
 
-    // Normalize password to NFKC (Rust strings are already valid UTF-8;
-    // for full NFKC we'd need the `unicode-normalization` crate,
-    // but for ASCII passwords this is equivalent)
+    // Password is already NFKC-normalized by the caller
     let password_bytes = password.as_bytes();
     let salt_bytes = salt.as_bytes();
 

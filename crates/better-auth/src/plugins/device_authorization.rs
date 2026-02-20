@@ -359,7 +359,7 @@ impl BetterAuthPlugin for DeviceAuthorizationPlugin {
                 let id = uuid::Uuid::new_v4().to_string();
                 let now = chrono::Utc::now();
                 let expires_at = now + chrono::Duration::milliseconds(opts.expires_in_ms());
-                let (verification_uri, verification_uri_complete) = build_verification_uris(opts.verification_uri.as_deref(), &ctx.base_url, &user_code);
+                let (verification_uri, verification_uri_complete) = build_verification_uris(opts.verification_uri.as_deref(), ctx.base_url.as_deref().unwrap_or(""), &user_code);
                 let record = serde_json::json!({
                     "id": id,
                     "deviceCode": device_code,

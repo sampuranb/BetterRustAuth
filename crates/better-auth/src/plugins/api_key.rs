@@ -898,14 +898,14 @@ impl BetterAuthPlugin for ApiKeyPlugin {
                 #[serde(rename_all = "camelCase")]
                 struct Body { #[serde(default)] name: Option<String>, #[serde(default)] prefix: Option<String>, #[serde(default)] expires_in: Option<i64> }
                 let body: Body = serde_json::from_value(req.body.clone()).unwrap_or(Body { name: None, prefix: None, expires_in: None });
-                let api_key = generate_api_key(opts.key_length, body.prefix.as_deref());
-                let key_hash = hash_api_key(&api_key);
+                let api_key = generate_api_key(opts.default_key_length, body.prefix.as_deref());
+                let key_hash = default_key_hasher(&api_key);
                 let id = uuid::Uuid::new_v4().to_string();
                 let now = chrono::Utc::now().to_rfc3339();
                 let expires_at = body.expires_in.map(|secs| (chrono::Utc::now() + chrono::Duration::seconds(secs)).to_rfc3339());
                 let record = serde_json::json!({
                     "id": id, "userId": user_id, "name": body.name.unwrap_or_default(),
-                    "key": key_hash, "prefix": body.prefix.unwrap_or(opts.default_prefix.clone()),
+                    "key": key_hash, "prefix": body.prefix.or(opts.default_prefix.clone()),
                     "expiresAt": expires_at, "enabled": true,
                     "createdAt": now, "updatedAt": now,
                 });
@@ -1005,7 +1005,7 @@ impl BetterAuthPlugin for ApiKeyPlugin {
                     Ok(b) => b,
                     Err(e) => return PluginHandlerResponse::error(400, "BAD_REQUEST", &format!("Invalid body: {}", e)),
                 };
-                let key_hash = hash_api_key(&body.api_key);
+                let key_hash = default_key_hasher(&body.api_key);
                 match ctx.adapter.find_many("apiKey", serde_json::json!({"key": key_hash})).await {
                     Ok(keys) if !keys.is_empty() => {
                         let key = &keys[0];

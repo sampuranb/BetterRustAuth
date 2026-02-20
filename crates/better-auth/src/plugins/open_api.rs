@@ -505,7 +505,7 @@ impl BetterAuthPlugin for OpenApiPlugin {
                 let tables = ctx.plugin_registry.plugins().iter()
                     .flat_map(|p| p.schema())
                     .collect::<Vec<_>>();
-                let spec = generate_openapi_spec(&ctx.base_url, &all_endpoints, &tables);
+                let spec = generate_openapi_spec(ctx.base_url.as_deref().unwrap_or(""), &all_endpoints, &tables);
                 PluginHandlerResponse::ok(serde_json::to_value(spec).unwrap_or_default())
             })
         });
@@ -524,13 +524,13 @@ impl BetterAuthPlugin for OpenApiPlugin {
                 let tables = ctx.plugin_registry.plugins().iter()
                     .flat_map(|p| p.schema())
                     .collect::<Vec<_>>();
-                let spec = generate_openapi_spec(&ctx.base_url, &all_endpoints, &tables);
+                let spec = generate_openapi_spec(ctx.base_url.as_deref().unwrap_or(""), &all_endpoints, &tables);
                 let spec_json = serde_json::to_value(&spec).unwrap_or_default();
                 let html = generate_scalar_html(&spec_json, &opts.theme, opts.nonce.as_deref());
                 PluginHandlerResponse {
                     status: 200,
                     body: serde_json::json!({"html": html}),
-                    headers: vec![("Content-Type".to_string(), "text/html".to_string())],
+                    headers: HashMap::from([("Content-Type".to_string(), "text/html".to_string())]),
                     redirect: None,
                 }
             })

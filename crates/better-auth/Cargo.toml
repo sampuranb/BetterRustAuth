@@ -93,6 +93,9 @@ k256 = { workspace = true }
 reqwest = { workspace = true }
 url = { workspace = true }
 
+# Unicode
+unicode-normalization = { workspace = true }
+
 # Utils
 uuid = { workspace = true }
 regex = { workspace = true }

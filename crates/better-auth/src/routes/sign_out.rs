@@ -74,6 +74,7 @@ mod tests {
             fresh_age: options.session.fresh_age,
             cookie_cache_enabled: options.session.cookie_cache.enabled,
             cookie_refresh_cache: better_auth_core::options::CookieRefreshCacheConfig::Disabled,
+            defer_session_refresh: false,
         };
         Arc::new(AuthContext {
             app_name: "Better Auth".into(),
@@ -101,6 +102,7 @@ mod tests {
             logger: better_auth_core::logger::AuthLogger::default(),
             async_hooks: better_auth_core::hooks::AsyncHookRegistry::new(),
             email_verification_config: crate::routes::email_verification::EmailVerificationConfig::default(),
+            social_providers: std::collections::HashMap::new(),
         })
     }
 

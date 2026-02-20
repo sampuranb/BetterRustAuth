@@ -62,6 +62,7 @@ mod tests {
 
     fn make_ctx() -> AuthContext {
         use std::sync::Arc;
+        use std::collections::HashMap;
         use crate::internal_adapter::tests::MockInternalAdapter;
         let options = better_auth_core::options::BetterAuthOptions::new("test-secret-that-is-long-enough-32");
         AuthContext {
@@ -77,6 +78,7 @@ mod tests {
                 fresh_age: 300,
                 cookie_cache_enabled: false,
                 cookie_refresh_cache: better_auth_core::options::CookieRefreshCacheConfig::Disabled,
+                defer_session_refresh: false,
             },
             oauth_config: crate::context::OAuthConfig {
                 store_state_strategy: "database".into(),
@@ -97,6 +99,7 @@ mod tests {
             logger: better_auth_core::logger::AuthLogger::default(),
             async_hooks: better_auth_core::hooks::AsyncHookRegistry::new(),
             email_verification_config: crate::routes::email_verification::EmailVerificationConfig::default(),
+            social_providers: HashMap::new(),
             options,
         }
     }

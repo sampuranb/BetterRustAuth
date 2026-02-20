@@ -30,3 +30,9 @@ tracing = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 uuid = { workspace = true }
+tower = { version = "0.5", features = ["util"] }
+hyper = "1"
+http-body-util = "0.1"
+async-trait = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }

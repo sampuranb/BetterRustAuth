@@ -561,8 +561,8 @@ impl BetterAuthPlugin for TwoFactorPlugin {
                     Some(id) => id.to_string(),
                     None => return PluginHandlerResponse::error(401, "UNAUTHORIZED", "Not authenticated"),
                 };
-                let secret = generate_totp(&uuid::Uuid::new_v4().to_string(), opts.totp.digits, opts.totp.period as u64);
-                let backup_codes = generate_backup_codes(opts.backup_codes.amount, opts.backup_codes.length);
+                let secret = generate_totp(&uuid::Uuid::new_v4().to_string(), opts.totp_options.digits, opts.totp_options.period);
+                let backup_codes = generate_backup_codes(opts.backup_code_options.amount, opts.backup_code_options.length);
                 let record = serde_json::json!({
                     "id": uuid::Uuid::new_v4().to_string(),
                     "userId": user_id,
@@ -605,7 +605,7 @@ impl BetterAuthPlugin for TwoFactorPlugin {
             let opts = gen_opts.clone();
             Box::pin(async move {
                 let secret = uuid::Uuid::new_v4().to_string().replace('-', "");
-                let code = generate_totp(&secret, opts.totp.digits, opts.totp.period as u64);
+                let code = generate_totp(&secret, opts.totp_options.digits, opts.totp_options.period);
                 PluginHandlerResponse::ok(serde_json::json!({"code": code, "secret": secret}))
             })
         });
@@ -627,7 +627,7 @@ impl BetterAuthPlugin for TwoFactorPlugin {
                 match ctx.adapter.find_many("twoFactor", serde_json::json!({"userId": uid.clone()})).await {
                     Ok(records) if !records.is_empty() => {
                         let secret = records[0].get("secret").and_then(|v| v.as_str()).unwrap_or("");
-                        if verify_totp(secret, &body.code, opts.totp.digits, opts.totp.period as u64) {
+                        if verify_totp(secret, &body.code, opts.totp_options.digits, opts.totp_options.period) {
                             let token = uuid::Uuid::new_v4().to_string();
                             let expires = chrono::Utc::now() + chrono::Duration::days(7);
                             match ctx.adapter.create_session(&uid, None, Some(expires.timestamp_millis())).await {
@@ -657,7 +657,7 @@ impl BetterAuthPlugin for TwoFactorPlugin {
                 match ctx.adapter.find_many("twoFactor", serde_json::json!({"userId": uid})).await {
                     Ok(records) if !records.is_empty() => {
                         let secret = records[0].get("secret").and_then(|v| v.as_str()).unwrap_or("");
-                        let uri = build_totp_uri(secret, &email, &opts.totp.issuer, opts.totp.digits, opts.totp.period as u64);
+                        let uri = build_totp_uri(secret, &email, opts.totp_options.issuer.as_deref().unwrap_or("Better Auth"), opts.totp_options.digits, opts.totp_options.period);
                         PluginHandlerResponse::ok(serde_json::json!({"totpURI": uri}))
                     }
                     _ => PluginHandlerResponse::error(404, "NOT_FOUND", "2FA not enabled"),
@@ -675,7 +675,7 @@ impl BetterAuthPlugin for TwoFactorPlugin {
                 let uid = match req.session.as_ref().and_then(|s| s.get("user")).and_then(|u| u.get("id")).and_then(|id| id.as_str()) {
                     Some(id) => id.to_string(), None => return PluginHandlerResponse::error(401, "UNAUTHORIZED", "Not authenticated"),
                 };
-                let codes = generate_backup_codes(opts.backup_codes.amount, opts.backup_codes.length);
+                let codes = generate_backup_codes(opts.backup_code_options.amount, opts.backup_code_options.length);
                 match ctx.adapter.find_many("twoFactor", serde_json::json!({"userId": uid})).await {
                     Ok(records) if !records.is_empty() => {
                         let id = records[0].get("id").and_then(|v| v.as_str()).unwrap_or("");

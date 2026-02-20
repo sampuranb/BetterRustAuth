@@ -9,6 +9,7 @@ use serde::Deserialize;
 
 use crate::context::AuthContext;
 use crate::internal_adapter::AdapterError;
+use crate::oauth::link_account::{HandleOAuthOptions, OAuthAccountInfo, OAuthUserInfo, OAuthUserResult};
 
 /// OAuth callback query parameters.
 #[derive(Debug, Deserialize)]
@@ -214,25 +215,61 @@ pub async fn handle_callback(
 
     let callback_url = &parsed_state.callback_url;
 
-    // 4. Token exchange
-    // In a full implementation, this would:
-    //   - Look up the provider from ctx.social_providers using parsed_state.provider
-    //   - Call provider.validate_authorization_code(code, code_verifier, redirect_uri)
-    //   - Get OAuth2Tokens (access_token, refresh_token, id_token, etc.)
-    //   - Call provider.get_user_info(tokens) to get user profile
-    //
-    // For now, we proceed with the account lookup + creation flow using the code
-    // as a proxy for the provider's account ID (will be replaced when provider
-    // registry is fully wired).
-
+    // 4. Token exchange — look up the provider and exchange the code for tokens
     let provider = &parsed_state.provider;
-    let provider_user_id = format!("{}_{}", provider, code);
+
+    let oauth_provider = match ctx.get_social_provider(provider) {
+        Some(p) => p,
+        None => {
+            return Ok(redirect_on_error("provider_not_found"));
+        }
+    };
+
+    // Build redirect URI for code exchange
+    let redirect_uri = format!(
+        "{}{}/callback/{}",
+        ctx.base_url.as_deref().unwrap_or(""),
+        ctx.base_path,
+        provider,
+    );
+
+    let code_data = better_auth_oauth2::provider::CodeValidationData {
+        code: code.clone(),
+        redirect_uri,
+        code_verifier: parsed_state.code_verifier.clone(),
+        device_id: query.device_id.clone(),
+    };
+
+    let tokens = match oauth_provider.validate_authorization_code(&code_data).await {
+        Ok(Some(t)) => t,
+        Ok(None) => {
+            return Ok(redirect_on_error("token_exchange_failed"));
+        }
+        Err(e) => {
+            tracing::error!("OAuth token exchange failed for provider '{}': {}", provider, e);
+            return Ok(redirect_on_error("token_exchange_failed"));
+        }
+    };
+
+    // Get user info from the provider
+    let user_info_result = match oauth_provider.get_user_info(&tokens).await {
+        Ok(Some(info)) => info,
+        Ok(None) => {
+            return Ok(redirect_on_error("user_info_failed"));
+        }
+        Err(e) => {
+            tracing::error!("OAuth get_user_info failed for provider '{}': {}", provider, e);
+            return Ok(redirect_on_error("user_info_failed"));
+        }
+    };
+
+    let provider_user = &user_info_result.user;
 
     // 5. Handle account linking flow
     if let Some(ref link) = parsed_state.link {
         let existing_account = ctx
             .adapter
-            .find_account_by_provider(provider, &provider_user_id)
+            .find_account_by_provider(provider, &provider_user.id)
             .await?;
 
         if let Some(existing) = existing_account {
@@ -242,13 +279,23 @@ pub async fn handle_callback(
             }
             // Account already linked to this user — just redirect
         } else {
-            // Create new linked account
+            // Create new linked account with real token data
             let now = chrono::Utc::now().to_rfc3339();
+            let access_token_expires = tokens.access_token_expires_at.map(|dt| dt.to_rfc3339());
+            let refresh_token_expires = tokens.refresh_token_expires_at.map(|dt| dt.to_rfc3339());
+            let scope_str = if tokens.scopes.is_empty() { None } else { Some(tokens.scopes.join(",")) };
+
             let account_data = serde_json::json!({
                 "id": uuid::Uuid::new_v4().to_string(),
                 "userId": link.user_id,
-                "accountId": provider_user_id,
+                "accountId": provider_user.id,
                 "providerId": provider,
+                "accessToken": tokens.access_token,
+                "refreshToken": tokens.refresh_token,
+                "idToken": tokens.id_token,
+                "accessTokenExpiresAt": access_token_expires,
+                "refreshTokenExpiresAt": refresh_token_expires,
+                "scope": scope_str,
                 "createdAt": now,
                 "updatedAt": now,
             });
@@ -258,61 +305,60 @@ pub async fn handle_callback(
         return Ok(CallbackResult::Redirect(callback_url.clone()));
     }
 
-    // 6. Find or create user + account
-    let existing_account = ctx
-        .adapter
-        .find_account_by_provider(provider, &provider_user_id)
-        .await?;
+    // 6. Find or create user + account using handle_oauth_user_info
+    let access_token_expires = tokens.access_token_expires_at.map(|dt| dt.to_rfc3339());
+    let refresh_token_expires = tokens.refresh_token_expires_at.map(|dt| dt.to_rfc3339());
+    let scope_str = if tokens.scopes.is_empty() { None } else { Some(tokens.scopes.join(",")) };
 
-    let is_new_user = existing_account.is_none();
-
-    let user_id = if let Some(account) = existing_account {
-        // Existing user — get their user ID
-        account["userId"]
-            .as_str()
-            .unwrap_or_default()
-            .to_string()
-    } else {
-        // New user — create user + account
-        let user_id = uuid::Uuid::new_v4().to_string();
-        let now = chrono::Utc::now().to_rfc3339();
-
-        let user_data = serde_json::json!({
-            "id": user_id,
-            "email": format!("{}@{}.oauth", provider_user_id, provider),
-            "name": provider_user_id,
-            "emailVerified": false,
-            "createdAt": now,
-            "updatedAt": now,
-        });
-        ctx.adapter.create_user(user_data).await?;
-
-        let account_data = serde_json::json!({
-            "id": uuid::Uuid::new_v4().to_string(),
-            "userId": user_id,
-            "accountId": provider_user_id,
-            "providerId": provider,
-            "createdAt": now,
-            "updatedAt": now,
-        });
-        ctx.adapter.create_account(account_data).await?;
-
-        user_id
+    let oauth_user_info = OAuthUserInfo {
+        id: provider_user.id.clone(),
+        email: provider_user.email.clone().unwrap_or_default(),
+        name: provider_user.name.clone(),
+        image: provider_user.image.clone(),
+        email_verified: provider_user.email_verified,
     };
 
-    // 7. Create session (adapter generates token, expiry, timestamps)
-    ctx.adapter.create_session(
-        &user_id,
-        None,
-        Some(ctx.session_config.expires_in as i64),
-    ).await?;
-
-    // 8. Redirect — use newUserURL for new registrations, callbackURL otherwise
-    let redirect_url = if is_new_user {
-        parsed_state.new_user_url.as_deref().unwrap_or(callback_url)
-    } else {
-        callback_url
+    let oauth_account = OAuthAccountInfo {
+        provider_id: provider.clone(),
+        account_id: provider_user.id.clone(),
+        access_token: tokens.access_token.clone(),
+        refresh_token: tokens.refresh_token.clone(),
+        id_token: tokens.id_token.clone(),
+        access_token_expires_at: access_token_expires,
+        refresh_token_expires_at: refresh_token_expires,
+        scope: scope_str,
     };
 
-    Ok(CallbackResult::Redirect(redirect_url.to_string()))
+    let disable_sign_up = oauth_provider.disable_sign_up()
+        || (oauth_provider.disable_implicit_sign_up() && !parsed_state.request_sign_up);
+
+    let oauth_opts = HandleOAuthOptions {
+        callback_url: Some(callback_url.clone()),
+        disable_sign_up,
+        override_user_info: oauth_provider.options().override_user_info_on_sign_in,
+        is_trusted_provider: false,
+    };
+
+    let oauth_result = crate::oauth::link_account::handle_oauth_user_info(
+        ctx.clone(),
+        oauth_user_info,
+        oauth_account,
+        oauth_opts,
+    )
+    .await?;
+
+    match oauth_result {
+        OAuthUserResult::Success { is_register, .. } => {
+            // 7. Redirect — use newUserURL for new registrations, callbackURL otherwise
+            let redirect_url = if is_register {
+                parsed_state.new_user_url.as_deref().unwrap_or(callback_url)
+            } else {
+                callback_url
+            };
+            Ok(CallbackResult::Redirect(redirect_url.to_string()))
+        }
+        OAuthUserResult::Error { error, .. } => {
+            Ok(redirect_on_error(&error))
+        }
+    }
 }

@@ -3,6 +3,7 @@
 // Holds the fully-initialized auth configuration for request processing.
 // In Rust we use Arc<AuthContext> shared across request handlers.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use better_auth_core::hooks::AsyncHookRegistry;
@@ -81,6 +82,10 @@ pub struct AuthContext {
 
     /// Email verification configuration.
     pub email_verification_config: EmailVerificationConfig,
+
+    /// Instantiated social OAuth providers, keyed by provider ID (e.g., "google", "github").
+    /// Built from `options.social_providers` at startup.
+    pub social_providers: HashMap<String, Arc<dyn better_auth_oauth2::OAuthProvider>>,
 }
 
 // Manual Debug impl because dyn InternalAdapter is not Debug
@@ -98,6 +103,7 @@ impl std::fmt::Debug for AuthContext {
             .field("hooks", &self.hooks)
             .field("logger", &self.logger)
             .field("async_hooks", &self.async_hooks)
+            .field("social_providers", &format!("{} providers", self.social_providers.len()))
             .finish()
     }
 }
@@ -118,6 +124,8 @@ pub struct SessionConfig {
     pub cookie_cache_enabled: bool,
     /// Cookie refresh cache config (for stateless setups).
     pub cookie_refresh_cache: CookieRefreshCacheConfig,
+    /// Whether to defer session refresh to POST requests.
+    pub defer_session_refresh: bool,
 }
 
 /// OAuth configuration resolved from options.
@@ -157,6 +165,13 @@ impl AuthContext {
         self.plugin_registry.has_plugin(plugin_id)
     }
 
+    /// Get an instantiated social provider by ID.
+    ///
+    /// Returns `None` if the provider isn't configured.
+    pub fn get_social_provider(&self, id: &str) -> Option<&Arc<dyn better_auth_oauth2::OAuthProvider>> {
+        self.social_providers.get(id)
+    }
+
     /// Create a new `AuthContext` from options and a database adapter.
     pub fn new(
         options: BetterAuthOptions,
@@ -185,6 +200,7 @@ impl AuthContext {
             fresh_age: options.session.fresh_age,
             cookie_cache_enabled: options.session.cookie_cache.enabled,
             cookie_refresh_cache: CookieRefreshCacheConfig::Disabled,
+            defer_session_refresh: options.session.defer_session_refresh,
         };
 
         let oauth_config = OAuthConfig {
@@ -201,6 +217,9 @@ impl AuthContext {
 
         let origin_check_config = OriginCheckConfig::default();
         let rate_limiter = Arc::new(RateLimiter::new(RateLimitConfig::default()));
+
+        // Build social providers from options
+        let social_providers = build_social_providers(&options);
 
         Arc::new(Self {
             options,
@@ -222,8 +241,40 @@ impl AuthContext {
             logger: AuthLogger::default(),
             async_hooks: AsyncHookRegistry::new(),
             email_verification_config: EmailVerificationConfig::default(),
+            social_providers,
         })
     }
+}
+
+/// Build instantiated OAuth providers from the raw `social_providers` config.
+///
+/// Parses each entry in `options.social_providers` as a `ProviderOptions`,
+/// looks up the static `ProviderConfig` by ID, and creates a `GenericOAuthProvider`.
+pub fn build_social_providers(
+    options: &BetterAuthOptions,
+) -> HashMap<String, Arc<dyn better_auth_oauth2::OAuthProvider>> {
+    let mut providers: HashMap<String, Arc<dyn better_auth_oauth2::OAuthProvider>> = HashMap::new();
+
+    for (id, raw_config) in &options.social_providers {
+        // Try to deserialize the raw JSON into ProviderOptions
+        let provider_options: better_auth_oauth2::ProviderOptions = match serde_json::from_value(raw_config.clone()) {
+            Ok(opts) => opts,
+            Err(e) => {
+                tracing::warn!("Failed to parse social provider '{}' config: {}", id, e);
+                continue;
+            }
+        };
+
+        // Look up the static provider config
+        if let Some(config) = better_auth_oauth2::get_provider_config(id) {
+            let provider = better_auth_oauth2::GenericOAuthProvider::new(config, provider_options);
+            providers.insert(id.clone(), Arc::new(provider));
+        } else {
+            tracing::warn!("Unknown social provider '{}' — no built-in config found", id);
+        }
+    }
+
+    providers
 }
 
 #[cfg(test)]

@@ -259,14 +259,15 @@ impl AuthSchema {
                 "userId",
                 SchemaField::required_string().with_reference("user", "id"),
             )
-            .field("accessToken", SchemaField::optional_string())
-            .field("refreshToken", SchemaField::optional_string())
-            .field("idToken", SchemaField::optional_string())
+            .field("accessToken", SchemaField::optional_string().hidden())
+            .field("refreshToken", SchemaField::optional_string().hidden())
+            .field("idToken", SchemaField::optional_string().hidden())
             .field(
                 "accessTokenExpiresAt",
                 SchemaField {
                     field_type: FieldType::Date,
                     required: false,
+                    returned: false,
                     ..SchemaField::required_string()
                 },
             )
@@ -275,6 +276,7 @@ impl AuthSchema {
                 SchemaField {
                     field_type: FieldType::Date,
                     required: false,
+                    returned: false,
                     ..SchemaField::required_string()
                 },
             )

@@ -33,6 +33,14 @@ pub struct ProfileMapping {
     pub email_verified_default: bool,
 }
 
+/// Sentinel value for `userinfo_endpoint`: indicates that user info should be
+/// decoded from the ID token JWT instead of fetching from an HTTP endpoint.
+pub const USERINFO_ID_TOKEN_SENTINEL: &str = "__id_token__";
+
+/// Sentinel value for header values in `extra_userinfo_headers`: will be
+/// replaced at runtime with the provider's `client_id` from `ProviderOptions`.
+pub const CLIENT_ID_HEADER_SENTINEL: &str = "__client_id__";
+
 /// Static configuration for a social provider.
 #[derive(Debug, Clone, Copy)]
 pub struct ProviderConfig {
@@ -40,15 +48,26 @@ pub struct ProviderConfig {
     pub name: &'static str,
     pub authorization_endpoint: &'static str,
     pub token_endpoint: &'static str,
+    /// Userinfo endpoint URL. Set to `USERINFO_ID_TOKEN_SENTINEL` (`"__id_token__"`)
+    /// for providers that use ID token JWT decoding instead of a userinfo API
+    /// (e.g., Apple).
     pub userinfo_endpoint: &'static str,
     pub default_scopes: &'static [&'static str],
     pub scope_joiner: &'static str,
     pub auth_method: AuthenticationMethod,
     pub profile_mapping: ProfileMapping,
     /// Additional headers to send with the userinfo request.
+    /// Use `CLIENT_ID_HEADER_SENTINEL` (`"__client_id__"`) as the value
+    /// to inject the provider's client_id at runtime (e.g., Twitch Client-Id).
     pub extra_userinfo_headers: &'static [(&'static str, &'static str)],
     /// HTTP method for the userinfo request (true = POST, false = GET).
     pub userinfo_is_post: bool,
+    /// Default response_mode for the authorization request (e.g., "form_post" for Apple).
+    /// If `None`, falls back to the value in `ProviderOptions`.
+    pub response_mode: Option<&'static str>,
+    /// POST body for userinfo requests (e.g., GraphQL query for Linear).
+    /// Only used when `userinfo_is_post` is `true`.
+    pub userinfo_post_body: Option<&'static str>,
 }
 
 /// A generic OAuth provider implementation backed by `ProviderConfig`.

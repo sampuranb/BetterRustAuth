@@ -307,7 +307,7 @@ pub async fn handle_link_social(
 
     // Build the authorization URL
     let auth_url = format!(
-        "{}{}/signin/social?provider={}&state={}",
+        "{}{}/sign-in/social?provider={}&state={}",
         ctx.base_url.as_deref().unwrap_or(""),
         ctx.base_path,
         body.provider,
@@ -350,7 +350,82 @@ pub async fn handle_get_access_token(
         })
         .ok_or_else(|| AdapterError::NotFound)?;
 
-    // Get access token — decrypt if encrypted
+    // Check if the access token is expired or about to expire (within 5 seconds)
+    let needs_refresh = account["accessTokenExpiresAt"]
+        .as_str()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|expires_at| {
+            let now_plus_buffer = chrono::Utc::now() + chrono::TimeDelta::seconds(5);
+            expires_at <= now_plus_buffer
+        })
+        .unwrap_or(false);
+
+    if needs_refresh {
+        // Try to auto-refresh if a refresh token exists and provider supports it
+        let refresh_token_raw = account["refreshToken"]
+            .as_str()
+            .filter(|s| !s.is_empty());
+
+        if let Some(refresh_token_raw) = refresh_token_raw {
+            if let Some(provider) = ctx.get_social_provider(&body.provider_id) {
+                let refresh_token =
+                    crate::oauth::token_utils::decrypt_token(refresh_token_raw, &ctx);
+
+                if let Ok(new_tokens) = provider.refresh_access_token(&refresh_token).await {
+                    // Update the account with new tokens
+                    let account_id = account["id"].as_str().unwrap_or_default();
+                    let access_token_expires =
+                        new_tokens.access_token_expires_at.map(|dt| dt.to_rfc3339());
+                    let refresh_token_expires =
+                        new_tokens.refresh_token_expires_at.map(|dt| dt.to_rfc3339());
+                    let scope_str = if new_tokens.scopes.is_empty() {
+                        None
+                    } else {
+                        Some(new_tokens.scopes.join(","))
+                    };
+
+                    let update_data = serde_json::json!({
+                        "accessToken": new_tokens.access_token,
+                        "refreshToken": new_tokens.refresh_token,
+                        "idToken": new_tokens.id_token,
+                        "accessTokenExpiresAt": access_token_expires,
+                        "refreshTokenExpiresAt": refresh_token_expires,
+                        "scope": scope_str,
+                        "updatedAt": chrono::Utc::now().to_rfc3339(),
+                    });
+                    let _ = ctx
+                        .adapter
+                        .update_account_by_id(account_id, update_data)
+                        .await;
+
+                    // Build scopes — prefer refreshed scopes, fall back to stored
+                    let scopes = if new_tokens.scopes.is_empty() {
+                        account["scope"]
+                            .as_str()
+                            .map(|s| {
+                                s.split(',')
+                                    .map(|x| x.trim().to_string())
+                                    .filter(|x| !x.is_empty())
+                                    .collect()
+                            })
+                            .unwrap_or_default()
+                    } else {
+                        new_tokens.scopes
+                    };
+
+                    return Ok(AccessTokenResponse {
+                        access_token: new_tokens.access_token.unwrap_or_default(),
+                        access_token_expires_at: access_token_expires,
+                        scopes,
+                        id_token: new_tokens.id_token,
+                        token_type: Some("bearer".into()),
+                    });
+                }
+            }
+        }
+    }
+
+    // Return existing token as-is (not expired, or refresh not possible)
     let access_token = account["accessToken"]
         .as_str()
         .unwrap_or_default()
@@ -524,47 +599,57 @@ pub async fn handle_refresh_token(
         .ok_or(RefreshTokenError::AccountNotFound)?;
 
     // Get the refresh token
-    let refresh_token = account["refreshToken"]
+    let refresh_token_raw = account["refreshToken"]
         .as_str()
         .filter(|s| !s.is_empty())
         .ok_or(RefreshTokenError::RefreshTokenNotFound)?;
 
-    // In a full implementation, decrypt the refresh token, call the provider's
-    // refresh endpoint, and update the account. For now, we return the existing
-    // token data since provider-specific refresh logic depends on the OAuth2 layer.
-    let access_token = account["accessToken"]
-        .as_str()
-        .unwrap_or_default()
-        .to_string();
+    // Decrypt the refresh token if encrypted
+    let refresh_token = crate::oauth::token_utils::decrypt_token(refresh_token_raw, &ctx);
 
-    let scope = account["scope"]
-        .as_str()
-        .map(|s| s.to_string());
+    // Look up the provider
+    let provider = ctx
+        .get_social_provider(&body.provider_id)
+        .ok_or_else(|| RefreshTokenError::ProviderNotSupported(body.provider_id.clone()))?;
 
-    let id_token = account["idToken"]
-        .as_str()
-        .map(|s| s.to_string());
+    // Call the provider's refresh endpoint
+    let new_tokens = provider
+        .refresh_access_token(&refresh_token)
+        .await
+        .map_err(|e| {
+            tracing::error!("Token refresh failed for provider '{}': {}", body.provider_id, e);
+            RefreshTokenError::RefreshFailed
+        })?;
+
+    // Update the account with new tokens
+    let account_id = account["id"].as_str().unwrap_or_default();
+    let access_token_expires = new_tokens.access_token_expires_at.map(|dt| dt.to_rfc3339());
+    let refresh_token_expires = new_tokens.refresh_token_expires_at.map(|dt| dt.to_rfc3339());
+    let scope_str = if new_tokens.scopes.is_empty() { None } else { Some(new_tokens.scopes.join(",")) };
+
+    let update_data = serde_json::json!({
+        "accessToken": new_tokens.access_token,
+        "refreshToken": new_tokens.refresh_token,
+        "idToken": new_tokens.id_token,
+        "accessTokenExpiresAt": access_token_expires,
+        "refreshTokenExpiresAt": refresh_token_expires,
+        "scope": scope_str,
+        "updatedAt": chrono::Utc::now().to_rfc3339(),
+    });
+    ctx.adapter.update_account_by_id(account_id, update_data).await?;
 
     let account_id_val = account["accountId"]
         .as_str()
         .unwrap_or_default()
         .to_string();
 
-    let access_token_expires_at = account["accessTokenExpiresAt"]
-        .as_str()
-        .map(|s| s.to_string());
-
-    let refresh_token_expires_at = account["refreshTokenExpiresAt"]
-        .as_str()
-        .map(|s| s.to_string());
-
     Ok(RefreshTokenResponse {
-        access_token,
-        refresh_token: Some(refresh_token.to_string()),
-        access_token_expires_at,
-        refresh_token_expires_at,
-        scope,
-        id_token,
+        access_token: new_tokens.access_token.unwrap_or_default(),
+        refresh_token: new_tokens.refresh_token,
+        access_token_expires_at: access_token_expires,
+        refresh_token_expires_at: refresh_token_expires,
+        scope: scope_str,
+        id_token: new_tokens.id_token,
         provider_id: body.provider_id,
         account_id: account_id_val,
     })
@@ -586,12 +671,9 @@ pub struct AccountInfoQuery {
 ///
 /// Flow:
 /// 1. Find the account by provider-given account ID or cookie
-/// 2. Get an access token (auto-refreshing if needed)
+/// 2. Get an access token (auto-refreshing if expired/about-to-expire)
 /// 3. Call the provider's getUserInfo endpoint
-/// 4. Return the provider's user info
-///
-/// Since calling the actual provider requires the OAuth2 provider layer,
-/// this handler returns the account's stored data as a proxy.
+/// 4. Return the provider's user info, falling back to stored data on error
 pub async fn handle_account_info(
     ctx: Arc<AuthContext>,
     user_id: &str,
@@ -619,27 +701,125 @@ pub async fn handle_account_info(
         return Err(AccountInfoError::AccountNotFound);
     }
 
-    // In a full implementation, we would:
-    // 1. Get an access token (via handle_get_access_token)
-    // 2. Call the provider's getUserInfo endpoint
-    // For now, return stored account data
-    let user_info = serde_json::json!({
-        "id": account["accountId"],
-        "name": serde_json::Value::Null,
-        "email": serde_json::Value::Null,
-        "image": serde_json::Value::Null,
-        "emailVerified": false,
-    });
+    let provider_id = account["providerId"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
 
-    let data = serde_json::json!({
-        "providerId": account["providerId"],
-        "accountId": account["accountId"],
-    });
+    // Get a valid access token, auto-refreshing if needed
+    let mut access_token = account["accessToken"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
 
-    Ok(AccountInfoResponse {
-        user: user_info,
-        data,
-    })
+    // Check if the access token is expired or about to expire (within 5 seconds)
+    let needs_refresh = account["accessTokenExpiresAt"]
+        .as_str()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|expires_at| {
+            let now_plus_buffer = chrono::Utc::now() + chrono::TimeDelta::seconds(5);
+            expires_at <= now_plus_buffer
+        })
+        .unwrap_or(false);
+
+    if needs_refresh {
+        if let Some(refresh_token_raw) = account["refreshToken"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+        {
+            if let Some(provider) = ctx.get_social_provider(&provider_id) {
+                let refresh_token =
+                    crate::oauth::token_utils::decrypt_token(refresh_token_raw, &ctx);
+
+                if let Ok(new_tokens) = provider.refresh_access_token(&refresh_token).await {
+                    // Update the account with new tokens
+                    let account_db_id = account["id"].as_str().unwrap_or_default();
+                    let access_token_expires =
+                        new_tokens.access_token_expires_at.map(|dt| dt.to_rfc3339());
+                    let refresh_token_expires =
+                        new_tokens.refresh_token_expires_at.map(|dt| dt.to_rfc3339());
+                    let scope_str = if new_tokens.scopes.is_empty() {
+                        None
+                    } else {
+                        Some(new_tokens.scopes.join(","))
+                    };
+
+                    let update_data = serde_json::json!({
+                        "accessToken": new_tokens.access_token,
+                        "refreshToken": new_tokens.refresh_token,
+                        "idToken": new_tokens.id_token,
+                        "accessTokenExpiresAt": access_token_expires,
+                        "refreshTokenExpiresAt": refresh_token_expires,
+                        "scope": scope_str,
+                        "updatedAt": chrono::Utc::now().to_rfc3339(),
+                    });
+                    let _ = ctx
+                        .adapter
+                        .update_account_by_id(account_db_id, update_data)
+                        .await;
+
+                    // Use the refreshed access token
+                    if let Some(ref tok) = new_tokens.access_token {
+                        access_token = tok.clone();
+                    }
+                }
+            }
+        }
+    }
+
+    if access_token.is_empty() {
+        return Err(AccountInfoError::AccessTokenNotFound);
+    }
+
+    // Look up the provider
+    let provider = ctx
+        .get_social_provider(&provider_id)
+        .ok_or(AccountInfoError::ProviderNotConfigured)?;
+
+    // Build OAuth2Tokens for the provider call
+    let tokens = better_auth_oauth2::OAuth2Tokens {
+        access_token: Some(access_token),
+        token_type: Some("bearer".to_string()),
+        ..Default::default()
+    };
+
+    // Call the provider's getUserInfo endpoint
+    match provider.get_user_info(&tokens).await {
+        Ok(Some(info)) => {
+            let user_info = serde_json::json!({
+                "id": info.user.id,
+                "name": info.user.name,
+                "email": info.user.email,
+                "image": info.user.image,
+                "emailVerified": info.user.email_verified,
+            });
+
+            Ok(AccountInfoResponse {
+                user: user_info,
+                data: info.data,
+            })
+        }
+        _ => {
+            // Fall back to stored account data on error or no result
+            let user_info = serde_json::json!({
+                "id": account["accountId"],
+                "name": serde_json::Value::Null,
+                "email": serde_json::Value::Null,
+                "image": serde_json::Value::Null,
+                "emailVerified": false,
+            });
+
+            let data = serde_json::json!({
+                "providerId": account["providerId"],
+                "accountId": account["accountId"],
+            });
+
+            Ok(AccountInfoResponse {
+                user: user_info,
+                data,
+            })
+        }
+    }
 }
 
 /// Account info error types.

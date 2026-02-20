@@ -270,6 +270,7 @@ impl AuthContextBuilder {
             fresh_age: self.options.session.fresh_age,
             cookie_cache_enabled: self.options.session.cookie_cache.enabled,
             cookie_refresh_cache,
+            defer_session_refresh: self.options.session.defer_session_refresh,
         };
 
         // 6. Build OAuth config
@@ -308,6 +309,9 @@ impl AuthContextBuilder {
             .adapter
             .ok_or("Database adapter is required. Call .adapter() on the builder.")?;
 
+        // 13. Build social providers
+        let social_providers = crate::context::build_social_providers(&self.options);
+
         let ctx = Arc::new(AuthContext {
             options: self.options,
             app_name,
@@ -328,6 +332,7 @@ impl AuthContextBuilder {
             logger: better_auth_core::logger::AuthLogger::default(),
             async_hooks: better_auth_core::hooks::AsyncHookRegistry::new(),
             email_verification_config: crate::routes::email_verification::EmailVerificationConfig::default(),
+            social_providers,
         });
 
         // 13. Run plugin init hooks

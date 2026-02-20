@@ -59,7 +59,7 @@ impl EmailOtpErrorCodes {
     pub const INVALID_OTP: &str = "Invalid OTP";
     pub const OTP_EXPIRED: &str = "OTP has expired";
     pub const TOO_MANY_ATTEMPTS: &str = "Too many attempts. Please request a new OTP";
-    pub const SEND_NOT_IMPLEMENTED: &str = "Send email verification is not implemented";
+    pub const SEND_NOT_IMPLEMENTED: &str = "sendVerificationOTP is not configured";
     pub const OTP_HASHED_CANNOT_RETURN: &str = "OTP is hashed, cannot return the plain text OTP";
 }
 
@@ -391,6 +391,15 @@ impl BetterAuthPlugin for EmailOtpPlugin {
                     Ok(b) => b,
                     Err(e) => return PluginHandlerResponse::error(400, "BAD_REQUEST", &format!("{}", e)),
                 };
+                // Check that the send callback is configured BEFORE generating/storing OTP
+                let send_fn = match opts.send_verification_otp {
+                    Some(ref f) => f,
+                    None => {
+                        tracing::error!("{}", EmailOtpErrorCodes::SEND_NOT_IMPLEMENTED);
+                        return PluginHandlerResponse::error(400, "BAD_REQUEST", EmailOtpErrorCodes::SEND_NOT_IMPLEMENTED);
+                    }
+                };
+
                 let otp_type = OtpType::from_str(body.r#type.as_deref().unwrap_or("email-verification"));
                 let otp = generate_otp(opts.otp_length);
                 let stored = prepare_otp_for_storage(&otp, &opts.store_otp);
@@ -398,19 +407,14 @@ impl BetterAuthPlugin for EmailOtpPlugin {
                 let expires = compute_otp_expiry(opts.expires_in);
                 let _ = ctx.adapter.create_verification(&identifier, &build_stored_value(&stored, 0), expires).await;
 
-                // Invoke the send callback if configured
-                if let Some(ref send_fn) = opts.send_verification_otp {
-                    let data = SendOtpData {
-                        email: body.email.clone(),
-                        otp: otp.clone(),
-                        otp_type,
-                    };
-                    if let Err(e) = send_fn(data).await {
-                        tracing::error!("Failed to send verification OTP: {}", e);
-                        return PluginHandlerResponse::error(500, "SEND_FAILED", &e);
-                    }
-                } else {
-                    tracing::warn!("{}", EmailOtpErrorCodes::SEND_NOT_IMPLEMENTED);
+                let data = SendOtpData {
+                    email: body.email.clone(),
+                    otp: otp.clone(),
+                    otp_type,
+                };
+                if let Err(e) = send_fn(data).await {
+                    tracing::error!("Failed to send verification OTP: {}", e);
+                    return PluginHandlerResponse::error(500, "SEND_FAILED", &e);
                 }
 
                 PluginHandlerResponse::ok(serde_json::json!({"status": true}))

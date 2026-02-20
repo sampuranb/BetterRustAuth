@@ -31,3 +31,6 @@ tracing = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 uuid = { workspace = true }
 actix-rt = "2"
+async-trait = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }

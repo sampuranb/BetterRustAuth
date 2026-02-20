@@ -5,8 +5,39 @@
 // from the TypeScript version.
 
 use std::collections::HashMap;
+use std::fmt;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+
+use crate::db::secondary_storage::SecondaryStorage;
+
+// ─── Email Callback Types ───────────────────────────────────────
+
+/// Data passed to email callback functions.
+#[derive(Debug, Clone)]
+pub struct EmailCallbackData {
+    /// The user record (as a JSON value for flexibility across plugins).
+    pub user: serde_json::Value,
+    /// The action URL (e.g., password reset link, verification link).
+    pub url: String,
+    /// The raw token associated with the action.
+    pub token: String,
+}
+
+/// Type alias for async email callback functions.
+///
+/// These callbacks are used to send transactional emails (password reset,
+/// email verification, account deletion, email change). The implementation
+/// is responsible for actually dispatching the email via whichever provider
+/// the application uses (SMTP, SendGrid, Resend, etc.).
+pub type EmailCallback = Arc<
+    dyn Fn(&EmailCallbackData) -> Pin<Box<dyn Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send>>
+        + Send
+        + Sync,
+>;
 
 /// Top-level configuration for Better Auth.
 ///
@@ -78,6 +109,14 @@ pub struct BetterAuthOptions {
     /// OAuth2 configuration.
     #[serde(default)]
     pub oauth: OAuthOptions,
+
+    /// Secondary storage for fast session/rate-limit caching (e.g., Redis).
+    ///
+    /// Maps to TS `secondaryStorage` option. When set, sessions, rate-limit
+    /// counters, and verification tokens are stored in this fast KV store
+    /// instead of (or in addition to) the primary database.
+    #[serde(skip)]
+    pub secondary_storage: Option<Arc<dyn SecondaryStorage>>,
 }
 
 fn default_base_path() -> String {
@@ -103,6 +142,7 @@ impl Default for BetterAuthOptions {
             plugins: Vec::new(),
             on_api_error: None,
             oauth: OAuthOptions::default(),
+            secondary_storage: None,
         }
     }
 }
@@ -134,11 +174,16 @@ impl BetterAuthOptions {
         self.plugins.push(plugin);
         self
     }
+
+    pub fn secondary_storage(mut self, storage: Arc<dyn SecondaryStorage>) -> Self {
+        self.secondary_storage = Some(storage);
+        self
+    }
 }
 
 // ─── Email & Password Options ────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EmailAndPasswordOptions {
     /// Enable email/password authentication (default: false).
@@ -180,12 +225,35 @@ pub struct EmailAndPasswordOptions {
     /// @default 3600 (1 hour)
     #[serde(default = "default_reset_password_token_expires_in")]
     pub reset_password_token_expires_in: u64,
+
+    /// Callback to send password reset emails.
+    /// Receives the user, reset URL, and token.
+    ///
+    /// Maps to TS `emailAndPassword.sendResetPassword`.
+    #[serde(skip)]
+    pub send_reset_password: Option<EmailCallback>,
 }
 
 fn default_min_password_length() -> usize { 8 }
 fn default_max_password_length() -> usize { 128 }
 fn default_true() -> bool { true }
 fn default_reset_password_token_expires_in() -> u64 { 3600 }
+
+impl fmt::Debug for EmailAndPasswordOptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EmailAndPasswordOptions")
+            .field("enabled", &self.enabled)
+            .field("min_password_length", &self.min_password_length)
+            .field("max_password_length", &self.max_password_length)
+            .field("auto_sign_in", &self.auto_sign_in)
+            .field("require_email_verification", &self.require_email_verification)
+            .field("disable_signup", &self.disable_signup)
+            .field("revoke_sessions_on_password_reset", &self.revoke_sessions_on_password_reset)
+            .field("reset_password_token_expires_in", &self.reset_password_token_expires_in)
+            .field("send_reset_password", &self.send_reset_password.as_ref().map(|_| "<callback>"))
+            .finish()
+    }
+}
 
 impl Default for EmailAndPasswordOptions {
     fn default() -> Self {
@@ -198,6 +266,7 @@ impl Default for EmailAndPasswordOptions {
             disable_signup: false,
             revoke_sessions_on_password_reset: false,
             reset_password_token_expires_in: default_reset_password_token_expires_in(),
+            send_reset_password: None,
         }
     }
 }
@@ -215,7 +284,7 @@ pub struct SessionOptions {
     #[serde(default = "default_session_update_age")]
     pub update_age: u64,
 
-    /// Fresh session window in seconds (default: 600 = 10 minutes).
+    /// Fresh session window in seconds (default: 86400 = 1 day).
     /// Operations requiring a "fresh" session check this.
     #[serde(default = "default_session_fresh_age")]
     pub fresh_age: u64,
@@ -223,11 +292,45 @@ pub struct SessionOptions {
     /// Cookie cache configuration for stateless session reads.
     #[serde(default)]
     pub cookie_cache: CookieCacheOptions,
+
+    /// Defer session refresh to a POST request instead of refreshing on every GET.
+    /// When enabled, GET /get-session returns a `needsRefresh` flag, and the client
+    /// sends a POST to trigger the actual DB update.
+    ///
+    /// Maps to TS `session.deferSessionRefresh`.
+    ///
+    /// @default false
+    #[serde(default)]
+    pub defer_session_refresh: bool,
+
+    /// Store sessions in both secondary storage and the database.
+    ///
+    /// When `secondary_storage` is configured, sessions are stored in the
+    /// fast KV store by default. Enable this to also persist session records
+    /// in the primary database for durability / audit purposes.
+    ///
+    /// Maps to TS `session.storeSessionInDatabase`.
+    ///
+    /// @default false
+    #[serde(default)]
+    pub store_session_in_database: bool,
+
+    /// Preserve session records in the database when revoked from secondary storage.
+    ///
+    /// When a session is revoked (e.g., user signs out) and secondary storage
+    /// is active, this keeps the session row in the database instead of deleting it.
+    /// Useful for audit trails.
+    ///
+    /// Maps to TS `session.preserveSessionInDatabase`.
+    ///
+    /// @default false
+    #[serde(default)]
+    pub preserve_session_in_database: bool,
 }
 
 fn default_session_expires_in() -> u64 { 604_800 } // 7 days
 fn default_session_update_age() -> u64 { 86_400 } // 1 day
-fn default_session_fresh_age() -> u64 { 600 } // 10 minutes
+fn default_session_fresh_age() -> u64 { 86_400 } // 1 day (matches TS)
 
 impl Default for SessionOptions {
     fn default() -> Self {
@@ -236,6 +339,9 @@ impl Default for SessionOptions {
             update_age: default_session_update_age(),
             fresh_age: default_session_fresh_age(),
             cookie_cache: CookieCacheOptions::default(),
+            defer_session_refresh: false,
+            store_session_in_database: false,
+            preserve_session_in_database: false,
         }
     }
 }
@@ -404,7 +510,7 @@ impl Default for AccountLinkingOptions {
 
 // ─── Email Verification Options ──────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EmailVerificationOptions {
     /// Whether to send verification email on signup (default: false).
@@ -427,6 +533,37 @@ pub struct EmailVerificationOptions {
     /// Verification token expiry in seconds (default: 3600 = 1 hour).
     #[serde(default = "default_verification_expiry")]
     pub expires_in: u64,
+
+    /// Callback to send email verification emails.
+    /// Receives the user, verification URL, and token.
+    ///
+    /// Maps to TS `emailVerification.sendVerificationEmail`.
+    #[serde(skip)]
+    pub send_verification_email: Option<EmailCallback>,
+}
+
+impl fmt::Debug for EmailVerificationOptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EmailVerificationOptions")
+            .field("send_on_sign_up", &self.send_on_sign_up)
+            .field("send_on_sign_in", &self.send_on_sign_in)
+            .field("auto_sign_in_after_verification", &self.auto_sign_in_after_verification)
+            .field("expires_in", &self.expires_in)
+            .field("send_verification_email", &self.send_verification_email.as_ref().map(|_| "<callback>"))
+            .finish()
+    }
+}
+
+impl Default for EmailVerificationOptions {
+    fn default() -> Self {
+        Self {
+            send_on_sign_up: false,
+            send_on_sign_in: false,
+            auto_sign_in_after_verification: false,
+            expires_in: default_verification_expiry(),
+            send_verification_email: None,
+        }
+    }
 }
 
 fn default_verification_expiry() -> u64 { 3600 }
@@ -440,7 +577,7 @@ pub struct RateLimitOptions {
     #[serde(default = "default_true")]
     pub enabled: bool,
 
-    /// Time window in seconds (default: 60).
+    /// Time window in seconds (default: 10).
     #[serde(default = "default_rate_limit_window")]
     pub window: u64,
 
@@ -449,7 +586,7 @@ pub struct RateLimitOptions {
     pub max: u64,
 }
 
-fn default_rate_limit_window() -> u64 { 60 }
+fn default_rate_limit_window() -> u64 { 10 } // 10 seconds (matches TS)
 fn default_rate_limit_max() -> u64 { 100 }
 
 impl Default for RateLimitOptions {
@@ -476,7 +613,7 @@ pub struct UserOptions {
     pub change_email: ChangeEmailOptions,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeleteUserOptions {
     /// Enable user self-deletion (default: false).
@@ -486,14 +623,66 @@ pub struct DeleteUserOptions {
     /// Require password confirmation for deletion.
     #[serde(default)]
     pub require_password: bool,
+
+    /// Callback to send account deletion verification emails.
+    /// Receives the user, verification URL, and token.
+    ///
+    /// Maps to TS `user.deleteUser.sendDeleteAccountVerification`.
+    #[serde(skip)]
+    pub send_delete_account_verification: Option<EmailCallback>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+impl fmt::Debug for DeleteUserOptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DeleteUserOptions")
+            .field("enabled", &self.enabled)
+            .field("require_password", &self.require_password)
+            .field("send_delete_account_verification", &self.send_delete_account_verification.as_ref().map(|_| "<callback>"))
+            .finish()
+    }
+}
+
+impl Default for DeleteUserOptions {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            require_password: false,
+            send_delete_account_verification: None,
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChangeEmailOptions {
     /// Enable email change (default: false).
     #[serde(default)]
     pub enabled: bool,
+
+    /// Callback to send email change confirmation emails.
+    /// Receives the user, confirmation URL, and token.
+    ///
+    /// Maps to TS `user.changeEmail.sendChangeEmailConfirmation`.
+    #[serde(skip)]
+    pub send_change_email_confirmation: Option<EmailCallback>,
+}
+
+impl fmt::Debug for ChangeEmailOptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ChangeEmailOptions")
+            .field("enabled", &self.enabled)
+            .field("send_change_email_confirmation", &self.send_change_email_confirmation.as_ref().map(|_| "<callback>"))
+            .finish()
+    }
+}
+
+impl Default for ChangeEmailOptions {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            send_change_email_confirmation: None,
+        }
+    }
 }
 
 // ─── Advanced Options ────────────────────────────────────────────

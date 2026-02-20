@@ -252,55 +252,89 @@ pub async fn handle_sign_in(
 
 /// Handle social sign-in (generate OAuth authorization URL).
 ///
-/// Generates the authorization URL and state, stores state in verification,
-/// and returns the redirect URL to the caller.
+/// Looks up the configured OAuth provider, generates PKCE and state parameters,
+/// stores them in the verification table, and returns the real provider
+/// authorization URL for the client to redirect to.
 pub async fn handle_social_sign_in(
     ctx: Arc<AuthContext>,
     body: SocialSignInRequest,
 ) -> Result<SignInResponse, AdapterError> {
-    // Generate OAuth state and store it for CSRF verification
-    let state = crate::crypto::random::generate_random_string(32);
-    let callback_url = body.callback_url.clone().unwrap_or_else(|| {
-        format!(
-            "{}{}/callback/{}",
-            ctx.base_url.as_deref().unwrap_or(""),
-            ctx.base_path,
-            body.provider,
-        )
-    });
+    // 1. Look up the OAuth provider
+    let provider = ctx
+        .get_social_provider(&body.provider)
+        .ok_or_else(|| {
+            AdapterError::Database(format!(
+                "Provider '{}' not found or not configured",
+                body.provider
+            ))
+        })?;
 
-    // Store state in verification table (expires in 10 minutes)
-    let expires_at = chrono::Utc::now() + chrono::TimeDelta::minutes(10);
-    let state_data = serde_json::json!({
-        "provider": body.provider,
-        "callbackUrl": callback_url,
-        "link": body.link,
-    });
+    // 2. Generate PKCE code verifier
+    let code_verifier = better_auth_oauth2::pkce::generate_code_verifier();
 
-    ctx.adapter
-        .create_verification(
-            &state,
-            &state_data.to_string(),
-            expires_at,
-        )
-        .await?;
-
-    // Build the authorization URL (provider-specific)
-    // In a full implementation, this would look up the provider config and
-    // construct the proper OAuth URL. For now, return the state and callback.
-    let auth_url = format!(
-        "{}{}/signin/social?provider={}&state={}",
-        ctx.base_url.as_deref().unwrap_or(""),
-        ctx.base_path,
-        body.provider,
-        state,
+    // 3. Build the redirect URI (internal callback endpoint where the provider
+    //    sends the authorization code back to us)
+    let base_url = ctx.base_url.as_deref().unwrap_or("");
+    let redirect_uri = format!(
+        "{}{}/callback/{}",
+        base_url, ctx.base_path, body.provider
     );
 
+    // 4. Determine the user's callback URL (where the user is redirected after
+    //    the full OAuth flow completes)
+    let callback_url = body
+        .callback_url
+        .clone()
+        .unwrap_or_else(|| base_url.to_string());
+
+    // 5. Build state data and store it in the verification table
+    let state_data = crate::oauth::state::StateData {
+        callback_url,
+        code_verifier: code_verifier.clone(),
+        error_url: body.error_callback_url.clone(),
+        new_user_url: body.new_user_callback_url.clone(),
+        expires_at: (chrono::Utc::now() + chrono::TimeDelta::minutes(10))
+            .timestamp_millis(),
+        link: None,
+        request_sign_up: None,
+    };
+
+    let generated_state =
+        crate::oauth::state::generate_state(ctx.clone(), state_data)
+            .await
+            .map_err(|e| {
+                AdapterError::Database(format!(
+                    "Failed to generate OAuth state: {}",
+                    e
+                ))
+            })?;
+
+    // 6. Create the real authorization URL via the provider
+    let auth_url_data = better_auth_oauth2::provider::AuthorizationUrlData {
+        state: generated_state.state,
+        code_verifier: generated_state.code_verifier,
+        scopes: body.scopes.clone(),
+        redirect_uri,
+        display: None,
+        login_hint: None,
+    };
+
+    let auth_url = provider
+        .create_authorization_url(&auth_url_data)
+        .await
+        .map_err(|e| {
+            AdapterError::Database(format!(
+                "Failed to create authorization URL: {}",
+                e
+            ))
+        })?;
+
+    // 7. Return the real provider authorization URL
     Ok(SignInResponse {
         user: serde_json::json!(null),
         session: serde_json::json!(null),
         token: String::new(),
         redirect: Some(true),
-        url: Some(auth_url),
+        url: Some(auth_url.to_string()),
     })
 }

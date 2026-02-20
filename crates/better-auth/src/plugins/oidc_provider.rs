@@ -1071,7 +1071,7 @@ impl BetterAuthPlugin for OidcProviderPlugin {
         let discovery_handler: PluginHandlerFn = Arc::new(move |ctx_any, _req: PluginHandlerRequest| {
             Box::pin(async move {
                 let ctx = ctx_any.downcast::<crate::context::AuthContext>().expect("Expected AuthContext");
-                let metadata = build_oidc_metadata(&ctx.base_url);
+                let metadata = build_oidc_metadata(ctx.base_url.as_deref().unwrap_or(""));
                 PluginHandlerResponse::ok(serde_json::to_value(metadata).unwrap_or_default())
             })
         });
@@ -1112,13 +1112,13 @@ impl BetterAuthPlugin for OidcProviderPlugin {
                     if prompts.contains(&"none".to_string()) && !redirect_uri.is_empty() {
                         let sep = if redirect_uri.contains('?') { "&" } else { "?" };
                         let error_url = format!("{}{}error=login_required&error_description=Authentication+required+but+prompt+is+none", redirect_uri, sep);
-                        return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), error_url)], redirect: None };
+                        return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), error_url)]), redirect: None };
                     }
                     // Redirect to login page
                     let login_page = "/login"; // configurable via options
                     let query_string = serde_json::to_string(&req.query).unwrap_or_default();
                     let login_url = format!("{}?client_id={}&redirect_uri={}&scope={}&state={}", login_page, client_id, redirect_uri, scope, state);
-                    return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), login_url)], redirect: None };
+                    return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), login_url)]), redirect: None };
                 }
 
                 let user_id = user_id.unwrap();
@@ -1130,7 +1130,7 @@ impl BetterAuthPlugin for OidcProviderPlugin {
                 if response_type != "code" {
                     let sep = if redirect_uri.contains('?') { "&" } else { "?" };
                     let error_url = format!("{}{}error=unsupported_response_type&error_description=unsupported+response+type", redirect_uri, sep);
-                    return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), error_url)], redirect: None };
+                    return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), error_url)]), redirect: None };
                 }
 
                 // Parse scopes
@@ -1158,7 +1158,7 @@ impl BetterAuthPlugin for OidcProviderPlugin {
                 if require_login {
                     let login_page = "/login";
                     let login_url = format!("{}?client_id={}&redirect_uri={}&scope={}&state={}", login_page, client_id, redirect_uri, scope, state);
-                    return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), login_url)], redirect: None };
+                    return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), login_url)]), redirect: None };
                 }
 
                 // Check existing consent from DB
@@ -1186,7 +1186,7 @@ impl BetterAuthPlugin for OidcProviderPlugin {
                 if prompts.contains(&"none".to_string()) && !has_already_consented {
                     let sep = if redirect_uri.contains('?') { "&" } else { "?" };
                     let error_url = format!("{}{}error=consent_required&error_description=Consent+required+but+prompt+is+none", redirect_uri, sep);
-                    return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), error_url)], redirect: None };
+                    return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), error_url)]), redirect: None };
                 }
 
                 // Determine if consent is required
@@ -1213,20 +1213,20 @@ impl BetterAuthPlugin for OidcProviderPlugin {
                 if require_login {
                     let login_page = "/login";
                     let login_url = format!("{}?client_id={}&code={}&state={}", login_page, client_id, code, state);
-                    return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), login_url)], redirect: None };
+                    return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), login_url)]), redirect: None };
                 }
 
                 if !require_consent {
                     // Redirect immediately with code
                     let sep = if redirect_uri.contains('?') { "&" } else { "?" };
                     let redirect_url = format!("{}{}code={}&state={}", redirect_uri, sep, code, state);
-                    return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), redirect_url)], redirect: None };
+                    return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), redirect_url)]), redirect: None };
                 }
 
                 // Redirect to consent page with consent_code, client_id, scope
                 let consent_page = "/consent";
                 let consent_url = format!("{}?consent_code={}&client_id={}&scope={}", consent_page, code, client_id, requested_scopes.join(" "));
-                PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), consent_url)], redirect: None }
+                PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), consent_url)]), redirect: None }
             })
         });
 
@@ -1578,7 +1578,7 @@ impl BetterAuthPlugin for OidcProviderPlugin {
                     .map(String::from);
                 let effective_user_id = validated_user_id.or(user_id_from_session);
                 if let Some(ref uid) = effective_user_id {
-                    let _ = ctx.adapter.delete_many("oauthAccessToken", vec![("userId", serde_json::Value::String(uid.clone()))]).await;
+                    let _ = ctx.adapter.delete_many("oauthAccessToken", serde_json::json!({"userId": uid})).await;
                 }
 
                 // Delete user session if present
@@ -1595,7 +1595,7 @@ impl BetterAuthPlugin for OidcProviderPlugin {
                         let sep = if redirect_url.contains('?') { "&" } else { "?" };
                         redirect_url.push_str(&format!("{}state={}", sep, state));
                     }
-                    PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), redirect_url)], redirect: None }
+                    PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), redirect_url)]), redirect: None }
                 } else {
                     PluginHandlerResponse::ok(serde_json::json!({"success": true, "message": "Logout successful"}))
                 }
@@ -1690,10 +1690,10 @@ mod tests {
 
     #[test]
     fn test_parse_prompt() {
-        let prompts = parse_prompt("login consent");
+        let prompts = parse_prompt("login consent").unwrap();
         assert_eq!(prompts, vec!["login", "consent"]);
 
-        let single = parse_prompt("none");
+        let single = parse_prompt("none").unwrap();
         assert_eq!(single, vec!["none"]);
     }
 
@@ -1725,8 +1725,9 @@ mod tests {
             code_challenge_method: None,
             prompt: None,
             nonce: None,
+            max_age: None,
         };
-        let result = handle_authorize(&query, &OidcProviderOptions::default(), &[], None, None);
+        let result = handle_authorize(&query, &OidcProviderOptions::default(), &[], None, None, false);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().error, "invalid_request");
     }
@@ -1743,8 +1744,9 @@ mod tests {
             code_challenge_method: None,
             prompt: None,
             nonce: None,
+            max_age: None,
         };
-        let result = handle_authorize(&query, &OidcProviderOptions::default(), &[], None, None);
+        let result = handle_authorize(&query, &OidcProviderOptions::default(), &[], None, None, false);
         assert!(result.is_ok());
         match result.unwrap() {
             AuthorizeResponse::RedirectToLogin { .. } => {}
@@ -1764,6 +1766,7 @@ mod tests {
             code_challenge_method: None,
             prompt: None,
             nonce: None,
+            max_age: None,
         };
 
         let trusted = vec![TrustedClient {
@@ -1782,6 +1785,7 @@ mod tests {
             &trusted,
             Some("user-123"),
             None,
+            false,
         );
         assert!(result.is_ok());
         match result.unwrap() {
@@ -1822,6 +1826,7 @@ mod tests {
             nonce: None,
             state: None,
             require_consent: None,
+            auth_time: None,
         };
 
         let body = TokenRequestBody {
@@ -1858,6 +1863,7 @@ mod tests {
             nonce: None,
             state: Some("xyz".into()),
             require_consent: Some(true),
+            auth_time: None,
         };
 
         let body = ConsentBody { accept: true, consent_code: None };
@@ -1878,6 +1884,7 @@ mod tests {
             nonce: None,
             state: None,
             require_consent: Some(true),
+            auth_time: None,
         };
 
         let body = ConsentBody { accept: false, consent_code: None };
@@ -1939,7 +1946,7 @@ mod tests {
             software_version: None,
             software_statement: None,
         };
-        let result = handle_register_client(&body);
+        let result = handle_register_client(&body, true, false);
         assert!(result.is_ok());
         let resp = result.unwrap();
         assert!(!resp.client_id.is_empty());
@@ -1968,7 +1975,7 @@ mod tests {
             software_version: None,
             software_statement: None,
         };
-        let result = handle_register_client(&body);
+        let result = handle_register_client(&body, true, false);
         assert!(result.is_err());
     }
 

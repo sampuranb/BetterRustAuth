@@ -759,7 +759,7 @@ impl BetterAuthPlugin for McpPlugin {
             let opts = metadata_opts.clone();
             Box::pin(async move {
                 let ctx = ctx_any.downcast::<crate::context::AuthContext>().expect("Expected AuthContext");
-                let metadata = build_mcp_metadata(&ctx.base_url);
+                let metadata = build_mcp_metadata(ctx.base_url.as_deref().unwrap_or(""));
                 PluginHandlerResponse::ok(serde_json::to_value(metadata).unwrap_or_default())
             })
         });
@@ -769,8 +769,8 @@ impl BetterAuthPlugin for McpPlugin {
             Box::pin(async move {
                 let ctx = ctx_any.downcast::<crate::context::AuthContext>().expect("Expected AuthContext");
                 PluginHandlerResponse::ok(serde_json::json!({
-                    "resource": ctx.base_url,
-                    "authorization_servers": [ctx.base_url],
+                    "resource": ctx.base_url.as_deref().unwrap_or(""),
+                    "authorization_servers": [ctx.base_url.as_deref().unwrap_or("")],
                 }))
             })
         });
@@ -796,14 +796,14 @@ impl BetterAuthPlugin for McpPlugin {
                 if response_type != "code" {
                     let sep = if redirect_uri.contains('?') { "&" } else { "?" };
                     let error_url = format!("{}{}error=unsupported_response_type&error_description=response_type+must+be+code", redirect_uri, sep);
-                    return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), error_url)], redirect: None };
+                    return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), error_url)]), redirect: None };
                 }
 
                 // PKCE is always required for MCP
                 if code_challenge.is_none() {
                     let sep = if redirect_uri.contains('?') { "&" } else { "?" };
                     let error_url = format!("{}{}error=invalid_request&error_description=code_challenge+is+required+for+MCP+OAuth", redirect_uri, sep);
-                    return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), error_url)], redirect: None };
+                    return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), error_url)]), redirect: None };
                 }
 
                 // Only S256 allowed for MCP
@@ -811,7 +811,7 @@ impl BetterAuthPlugin for McpPlugin {
                     if method != "S256" {
                         let sep = if redirect_uri.contains('?') { "&" } else { "?" };
                         let error_url = format!("{}{}error=invalid_request&error_description=only+S256+code_challenge_method+is+supported", redirect_uri, sep);
-                        return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), error_url)], redirect: None };
+                        return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), error_url)]), redirect: None };
                     }
                 }
 
@@ -831,7 +831,7 @@ impl BetterAuthPlugin for McpPlugin {
                 if user_id.is_none() {
                     let login_url = format!("{}?client_id={}&redirect_uri={}&scope={}&state={}",
                         opts.login_page, client_id, redirect_uri, scope, state);
-                    return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), login_url)], redirect: None };
+                    return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), login_url)]), redirect: None };
                 }
 
                 let user_id = user_id.unwrap();
@@ -852,7 +852,7 @@ impl BetterAuthPlugin for McpPlugin {
                 let redirect_url = format!("{}{}code={}&state={}", redirect_uri, sep, code, state);
                 PluginHandlerResponse {
                     status: 302, body: serde_json::json!({}),
-                    headers: vec![("Location".into(), redirect_url)], redirect: None,
+                    headers: HashMap::from([("Location".into(), redirect_url)]), redirect: None,
                 }
             })
         });

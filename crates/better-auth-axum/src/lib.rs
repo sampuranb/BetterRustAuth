@@ -1,20 +1,12 @@
-// better-auth-axum — Axum HTTP integration for Better Auth
-//
-// Provides a ready-to-use Axum Router with all auth endpoints wired up.
-// Usage:
-//
-//   let auth = BetterAuth::new(options, adapter);
-//   let app = Router::new().merge(auth.router());
-//   let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
-//   axum::serve(listener, app).await?;
+#![doc = include_str!("../README.md")]
 
 use std::sync::Arc;
 
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
+    http::{header, StatusCode},
     middleware as axum_mw,
-    response::{IntoResponse, Json, Redirect, Response},
+    response::{IntoResponse, Json, Response},
     routing::{get, post},
     Router,
 };
@@ -113,6 +105,8 @@ impl From<AdapterError> for ApiError {
             AdapterError::Database(msg) => {
                 if msg.contains("Invalid email or password") {
                     (StatusCode::UNAUTHORIZED, "INVALID_CREDENTIALS", msg.clone())
+                } else if msg.contains("Authentication required") || msg.contains("Invalid session") {
+                    (StatusCode::UNAUTHORIZED, "UNAUTHORIZED", msg.clone())
                 } else if msg.contains("already exists") {
                     (StatusCode::CONFLICT, "DUPLICATE", msg.clone())
                 } else if msg.contains("expired") || msg.contains("Invalid") {
@@ -213,14 +207,6 @@ impl From<routes::account::UnlinkError> for ApiError {
 }
 
 // ─── Cookie / Token Extraction ───────────────────────────────────
-
-/// Extract the session token from cookies or Authorization header.
-///
-/// Uses the configurable cookie prefix (default: "better-auth") to find
-/// the session token cookie. Also checks the `__Secure-` prefixed variant.
-fn extract_session_token(headers: &axum::http::HeaderMap) -> Option<String> {
-    extract_session_token_with_prefix(headers, "better-auth")
-}
 
 /// Extract the session token using a specific cookie prefix.
 fn extract_session_token_with_prefix(headers: &axum::http::HeaderMap, prefix: &str) -> Option<String> {
@@ -343,8 +329,9 @@ impl BetterAuth {
             // Password
             .route("/change-password", post(handle_change_password))
             .route("/set-password", post(handle_set_password))
-            .route("/forgot-password", post(handle_forgot_password))
+            .route("/request-password-reset", post(handle_forgot_password))
             .route("/reset-password", post(handle_reset_password))
+            .route("/reset-password/{token}", get(handle_reset_password_callback))
             .route("/verify-password", post(handle_verify_password))
             // Account
             .route("/list-accounts", get(handle_list_accounts))
@@ -375,6 +362,11 @@ impl BetterAuth {
 
 // ─── Route Handlers ─────────────────────────────────────────────
 
+/// Create a 302 Found redirect response (matches TS `c.redirect()` behavior).
+fn redirect_found(url: &str) -> Response {
+    (StatusCode::FOUND, [(header::LOCATION, url.to_string())]).into_response()
+}
+
 async fn handle_ok() -> impl IntoResponse {
     Json(routes::ok::handle_ok())
 }
@@ -401,13 +393,7 @@ async fn handle_social_sign_in(
 ) -> Result<impl IntoResponse, ApiError> {
     let result = routes::sign_in::handle_social_sign_in(ctx, body).await?;
 
-    // If redirect URL is provided and redirect is enabled, return a redirect
-    if result.redirect == Some(true) {
-        if let Some(ref url) = result.url {
-            return Ok(Redirect::temporary(url).into_response());
-        }
-    }
-
+    // Always return JSON — the TS client SDK does the redirect client-side
     Ok(Json(result).into_response())
 }
 
@@ -470,7 +456,7 @@ async fn handle_callback(
     Query(query): Query<routes::callback::CallbackQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
     let result = routes::callback::handle_callback(ctx, query).await?;
-    Ok(Redirect::temporary(result.url()))
+    Ok(redirect_found(result.url()))
 }
 
 /// OAuth callback POST handler — merges body+query and redirects to GET.
@@ -527,7 +513,7 @@ async fn handle_callback_post(
     let result = routes::callback::handle_callback_post(
         &full_base, &provider, &body_query, &url_query,
     );
-    Redirect::temporary(result.url())
+    redirect_found(result.url())
 }
 
 async fn handle_update_user(
@@ -535,7 +521,7 @@ async fn handle_update_user(
     headers: axum::http::HeaderMap,
     Json(body): Json<routes::update_user::UpdateUserRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let token = extract_session_token(&headers)
+    let token = extract_session_token_ctx(&headers, &ctx)
         .ok_or_else(|| ApiError::from(AdapterError::Database("Authentication required".into())))?;
 
     // Get session to find user_id
@@ -554,7 +540,7 @@ async fn handle_delete_user(
     headers: axum::http::HeaderMap,
     Json(body): Json<routes::update_user::DeleteUserRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let token = extract_session_token(&headers)
+    let token = extract_session_token_ctx(&headers, &ctx)
         .ok_or_else(|| ApiError::from(AdapterError::Database("Authentication required".into())))?;
     let session = require_session(ctx.clone(), &token).await?;
     let user_id = session.user["id"]
@@ -569,7 +555,7 @@ async fn handle_change_password(
     headers: axum::http::HeaderMap,
     Json(body): Json<routes::password::ChangePasswordRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let token = extract_session_token(&headers)
+    let token = extract_session_token_ctx(&headers, &ctx)
         .ok_or_else(|| ApiError::from(AdapterError::Database("Authentication required".into())))?;
 
     let session = require_session(ctx.clone(), &token).await?;
@@ -587,7 +573,7 @@ async fn handle_set_password(
     headers: axum::http::HeaderMap,
     Json(body): Json<routes::update_user::SetPasswordRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let token = extract_session_token(&headers)
+    let token = extract_session_token_ctx(&headers, &ctx)
         .ok_or_else(|| ApiError::from(AdapterError::Database("Authentication required".into())))?;
     let session = require_session(ctx.clone(), &token).await?;
     let user_id = session.user["id"]
@@ -614,12 +600,24 @@ async fn handle_reset_password(
     Ok(Json(result))
 }
 
+async fn handle_reset_password_callback(
+    State(ctx): State<Arc<AuthContext>>,
+    axum::extract::Path(token): axum::extract::Path<String>,
+    Query(query): Query<routes::password::PasswordResetCallbackQuery>,
+) -> impl IntoResponse {
+    let result = routes::password::handle_password_reset_callback(ctx, &token, query).await;
+    match result {
+        routes::password::PasswordResetCallbackResult::Redirect(url) => redirect_found(&url),
+        routes::password::PasswordResetCallbackResult::ErrorRedirect(url) => redirect_found(&url),
+    }
+}
+
 async fn handle_verify_password(
     State(ctx): State<Arc<AuthContext>>,
     headers: axum::http::HeaderMap,
     Json(body): Json<routes::password::VerifyPasswordRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let token = extract_session_token(&headers)
+    let token = extract_session_token_ctx(&headers, &ctx)
         .ok_or_else(|| ApiError::from(AdapterError::Database("Authentication required".into())))?;
     let session = require_session(ctx.clone(), &token).await?;
     let user_id = session.user["id"]
@@ -633,7 +631,7 @@ async fn handle_list_accounts(
     State(ctx): State<Arc<AuthContext>>,
     headers: axum::http::HeaderMap,
 ) -> Result<impl IntoResponse, ApiError> {
-    let token = extract_session_token(&headers)
+    let token = extract_session_token_ctx(&headers, &ctx)
         .ok_or_else(|| ApiError::from(AdapterError::Database("Authentication required".into())))?;
 
     let session = require_session(ctx.clone(), &token).await?;
@@ -651,7 +649,7 @@ async fn handle_unlink_account(
     headers: axum::http::HeaderMap,
     Json(body): Json<routes::account::UnlinkAccountRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let token = extract_session_token(&headers)
+    let token = extract_session_token_ctx(&headers, &ctx)
         .ok_or_else(|| ApiError::from(AdapterError::Database("Authentication required".into())))?;
 
     let session = require_session(ctx.clone(), &token).await?;
@@ -669,7 +667,7 @@ async fn handle_link_social(
     headers: axum::http::HeaderMap,
     Json(body): Json<routes::account::LinkSocialRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let token = extract_session_token(&headers)
+    let token = extract_session_token_ctx(&headers, &ctx)
         .ok_or_else(|| ApiError::from(AdapterError::Database("Authentication required".into())))?;
     let session = require_session(ctx.clone(), &token).await?;
     let user_id = session.user["id"]
@@ -703,7 +701,7 @@ async fn handle_change_email(
     headers: axum::http::HeaderMap,
     Json(body): Json<routes::update_user::ChangeEmailRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let token = extract_session_token(&headers)
+    let token = extract_session_token_ctx(&headers, &ctx)
         .ok_or_else(|| ApiError::from(AdapterError::Database("Authentication required".into())))?;
     let session = require_session(ctx.clone(), &token).await?;
     let user_id = session.user["id"]
@@ -719,7 +717,7 @@ async fn handle_get_access_token(
     headers: axum::http::HeaderMap,
     Json(body): Json<routes::account::GetAccessTokenRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let token = extract_session_token(&headers)
+    let token = extract_session_token_ctx(&headers, &ctx)
         .ok_or_else(|| ApiError::from(AdapterError::Database("Authentication required".into())))?;
     let session = require_session(ctx.clone(), &token).await?;
     let user_id = session.user["id"]
@@ -734,7 +732,7 @@ async fn handle_refresh_token(
     headers: axum::http::HeaderMap,
     Json(body): Json<routes::account::RefreshTokenRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let token = extract_session_token(&headers)
+    let token = extract_session_token_ctx(&headers, &ctx)
         .ok_or_else(|| ApiError::from(AdapterError::Database("Authentication required".into())))?;
     let session = require_session(ctx.clone(), &token).await?;
     let user_id = session.user["id"]
@@ -750,7 +748,7 @@ async fn handle_account_info(
     headers: axum::http::HeaderMap,
     Query(query): Query<routes::account::AccountInfoQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let token = extract_session_token(&headers)
+    let token = extract_session_token_ctx(&headers, &ctx)
         .ok_or_else(|| ApiError::from(AdapterError::Database("Authentication required".into())))?;
     let session = require_session(ctx.clone(), &token).await?;
     let user_id = session.user["id"]
@@ -828,7 +826,7 @@ async fn handle_plugin_dispatch(
     }
 
     // Extract session token
-    let session_token = extract_session_token(&headers);
+    let session_token = extract_session_token_ctx(&headers, &ctx);
 
     // If endpoint requires auth, validate the session
     let session = if endpoint_router::endpoint_requires_auth(&ctx.plugin_registry, plugin_method, &path) {
@@ -916,9 +914,8 @@ async fn handle_plugin_dispatch(
     ).await {
         Some(response) => plugin_response_to_axum(response),
         None => {
-            // Endpoint exists but no handler registered
-            (StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({
-                "error": "Endpoint exists but handler not implemented",
+            (StatusCode::NOT_FOUND, Json(serde_json::json!({
+                "error": "Not found",
                 "path": path,
             }))).into_response()
         }
@@ -929,7 +926,7 @@ async fn handle_plugin_dispatch(
 fn plugin_response_to_axum(resp: better_auth_core::plugin::PluginHandlerResponse) -> Response {
     // Handle redirects
     if let Some(ref url) = resp.redirect {
-        return Redirect::temporary(url).into_response();
+        return redirect_found(url).into_response();
     }
 
     let status = StatusCode::from_u16(resp.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
@@ -960,7 +957,7 @@ async fn handle_axum_list_sessions(
     State(ctx): State<Arc<AuthContext>>,
     headers: axum::http::HeaderMap,
 ) -> Result<impl IntoResponse, ApiError> {
-    let token = extract_session_token(&headers)
+    let token = extract_session_token_ctx(&headers, &ctx)
         .ok_or_else(|| ApiError::from(AdapterError::Database("Authentication required".into())))?;
     let session = require_session(ctx.clone(), &token).await?;
     let user_id = session.user["id"]
@@ -975,7 +972,7 @@ async fn handle_axum_revoke_session(
     headers: axum::http::HeaderMap,
     Json(body): Json<RevokeSessionRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let token = extract_session_token(&headers)
+    let token = extract_session_token_ctx(&headers, &ctx)
         .ok_or_else(|| ApiError::from(AdapterError::Database("Authentication required".into())))?;
     let session = require_session(ctx.clone(), &token).await?;
     let user_id = session.user["id"]
@@ -989,7 +986,7 @@ async fn handle_axum_revoke_sessions(
     State(ctx): State<Arc<AuthContext>>,
     headers: axum::http::HeaderMap,
 ) -> Result<impl IntoResponse, ApiError> {
-    let token = extract_session_token(&headers)
+    let token = extract_session_token_ctx(&headers, &ctx)
         .ok_or_else(|| ApiError::from(AdapterError::Database("Authentication required".into())))?;
     let session = require_session(ctx.clone(), &token).await?;
     let user_id = session.user["id"]
@@ -1003,7 +1000,7 @@ async fn handle_axum_revoke_other_sessions(
     State(ctx): State<Arc<AuthContext>>,
     headers: axum::http::HeaderMap,
 ) -> Result<impl IntoResponse, ApiError> {
-    let token = extract_session_token(&headers)
+    let token = extract_session_token_ctx(&headers, &ctx)
         .ok_or_else(|| ApiError::from(AdapterError::Database("Authentication required".into())))?;
     let session = require_session(ctx.clone(), &token).await?;
     let user_id = session.user["id"]
@@ -1139,7 +1136,7 @@ mod tests {
             "Bearer my-token-123".parse().unwrap(),
         );
         assert_eq!(
-            extract_session_token(&headers),
+            extract_session_token_with_prefix(&headers, "better-auth"),
             Some("my-token-123".to_string())
         );
     }
@@ -1149,12 +1146,12 @@ mod tests {
         let mut headers = axum::http::HeaderMap::new();
         headers.insert(
             "cookie",
-            "other=value; better-auth.session_token=abc123; another=xyz"
+            "other=value; test-prefix.session_token=abc123; another=xyz"
                 .parse()
                 .unwrap(),
         );
         assert_eq!(
-            extract_session_token(&headers),
+            extract_session_token_with_prefix(&headers, "test-prefix"),
             Some("abc123".to_string())
         );
     }
@@ -1162,7 +1159,7 @@ mod tests {
     #[test]
     fn test_extract_session_none() {
         let headers = axum::http::HeaderMap::new();
-        assert_eq!(extract_session_token(&headers), None);
+        assert_eq!(extract_session_token_with_prefix(&headers, "better-auth"), None);
     }
 
     #[test]

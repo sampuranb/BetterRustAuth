@@ -51,6 +51,24 @@ pub enum ErrorCode {
     SignupDisabled,
     RateLimitExceeded,
     InternalServerError,
+    TokenExpired,
+    InvalidUser,
+    UserEmailNotFound,
+    UserAlreadyExistsUseAnotherEmail,
+    EmailCanNotBeUpdated,
+    UserAlreadyHasPassword,
+    VerificationEmailNotEnabled,
+    EmailAlreadyVerified,
+    EmailMismatch,
+    SessionNotFresh,
+    LinkedAccountAlreadyExists,
+    FailedToCreateVerification,
+    FieldNotAllowed,
+    ValidationError,
+    MissingField,
+    #[serde(rename = "METHOD_NOT_ALLOWED_DEFER_SESSION_REQUIRED")]
+    MethodNotAllowed,
+    PasswordAlreadySet,
 }
 
 impl fmt::Display for ErrorCode {
@@ -97,6 +115,23 @@ impl fmt::Display for ErrorCode {
             Self::SignupDisabled => "Signup disabled",
             Self::RateLimitExceeded => "Rate limit exceeded",
             Self::InternalServerError => "Internal server error",
+            Self::TokenExpired => "Token expired",
+            Self::InvalidUser => "Invalid user",
+            Self::UserEmailNotFound => "User email not found",
+            Self::UserAlreadyExistsUseAnotherEmail => "User already exists, use another email",
+            Self::EmailCanNotBeUpdated => "Email can not be updated",
+            Self::UserAlreadyHasPassword => "User already has password",
+            Self::VerificationEmailNotEnabled => "Verification email not enabled",
+            Self::EmailAlreadyVerified => "Email already verified",
+            Self::EmailMismatch => "Email mismatch",
+            Self::SessionNotFresh => "Session not fresh",
+            Self::LinkedAccountAlreadyExists => "Linked account already exists",
+            Self::FailedToCreateVerification => "Failed to create verification",
+            Self::FieldNotAllowed => "Field not allowed",
+            Self::ValidationError => "Validation error",
+            Self::MissingField => "Missing field",
+            Self::MethodNotAllowed => "Method not allowed (defer session required)",
+            Self::PasswordAlreadySet => "Password already set",
         };
         write!(f, "{msg}")
     }

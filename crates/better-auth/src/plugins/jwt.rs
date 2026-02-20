@@ -418,8 +418,8 @@ impl BetterAuthPlugin for JwtPlugin {
                 let session = req.session.clone().unwrap_or_default();
                 let user = session.get("user").cloned().unwrap_or(serde_json::json!({}));
                 let now = chrono::Utc::now().timestamp();
-                let iss = opts.jwt.issuer.clone().unwrap_or_else(|| ctx.base_url.clone());
-                let aud = opts.jwt.audience.clone().unwrap_or_else(|| ctx.base_url.clone());
+                let iss = opts.jwt.issuer.clone().unwrap_or_else(|| ctx.base_url.clone().unwrap_or_default());
+                let aud = opts.jwt.audience.clone().unwrap_or_else(|| ctx.base_url.clone().unwrap_or_default());
                 let exp = now + opts.jwt.expires_in;
 
                 // Build JWT payload from session user data
@@ -503,8 +503,8 @@ impl BetterAuthPlugin for JwtPlugin {
                 let issuer_override = req.body.get("issuer").and_then(|v| v.as_str()).map(String::from);
                 let expected_iss = issuer_override
                     .or_else(|| opts.jwt.issuer.clone())
-                    .unwrap_or_else(|| ctx.base_url.clone());
-                let expected_aud = opts.jwt.audience.clone().unwrap_or_else(|| ctx.base_url.clone());
+                    .unwrap_or_else(|| ctx.base_url.clone().unwrap_or_default());
+                let expected_aud = opts.jwt.audience.clone().unwrap_or_else(|| ctx.base_url.clone().unwrap_or_default());
 
                 match verify_jwt_hmac(&token, &ctx.secret, Some(&expected_iss), Some(&expected_aud)) {
                     Some(payload) => PluginHandlerResponse::ok(serde_json::json!({ "payload": payload })),

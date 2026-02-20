@@ -611,7 +611,7 @@ impl BetterAuthClient {
 
     /// Request a password reset email.
     ///
-    /// Maps to TS `client.forgetPassword({...})` → `POST /forgot-password`.
+    /// Maps to TS `client.forgetPassword({...})` → `POST /request-password-reset`.
     pub async fn forgot_password(
         &self,
         email: &str,
@@ -621,7 +621,7 @@ impl BetterAuthClient {
         if let Some(url) = redirect_to {
             body["redirectTo"] = serde_json::Value::String(url.to_string());
         }
-        self.post("/forgot-password", &body).await
+        self.post("/request-password-reset", &body).await
     }
 
     /// Reset the password using a token from the reset email.

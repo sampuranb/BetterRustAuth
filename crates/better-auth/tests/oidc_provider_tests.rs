@@ -66,16 +66,18 @@ mod oidc_type_tests {
             "clientId": "my-app",
             "clientSecret": "secret-hash",
             "name": "My Application",
-            "redirectUris": ["http://localhost:3000/callback"],
-            "scopes": "openid email profile",
+            "redirectUrls": ["http://localhost:3000/callback"],
+            "type": "web",
+            "authenticationScheme": "header",
             "disabled": false,
             "icon": null,
             "metadata": null,
-            "createdAt": "2024-01-01T00:00:00Z"
+            "createdAt": "2024-01-01T00:00:00Z",
+            "updatedAt": "2024-01-01T00:00:00Z"
         });
         let client: OAuthClient = serde_json::from_value(v).unwrap();
         assert_eq!(client.client_id, "my-app");
-        assert_eq!(client.redirect_uris.len(), 1);
+        assert_eq!(client.redirect_urls.len(), 1);
         assert!(!client.disabled);
     }
 
@@ -86,16 +88,18 @@ mod oidc_type_tests {
             "clientId": "multi-redirect",
             "clientSecret": "secret",
             "name": "Multi App",
-            "redirectUris": [
+            "redirectUrls": [
                 "http://localhost:3000/cb",
                 "https://app.example.com/cb"
             ],
-            "scopes": "openid",
+            "type": "web",
+            "authenticationScheme": "header",
             "disabled": false,
-            "createdAt": "2024-01-01T00:00:00Z"
+            "createdAt": "2024-01-01T00:00:00Z",
+            "updatedAt": "2024-01-01T00:00:00Z"
         });
         let client: OAuthClient = serde_json::from_value(v).unwrap();
-        assert_eq!(client.redirect_uris.len(), 2);
+        assert_eq!(client.redirect_urls.len(), 2);
     }
 
     // ── Access Token ────────────────────────────────────────────
@@ -104,15 +108,16 @@ mod oidc_type_tests {
     fn access_token_serde() {
         let v = json!({
             "id": "at-1",
-            "token": "access-token-xyz",
+            "accessToken": "access-token-xyz",
             "userId": "user-1",
             "clientId": "client-1",
             "scopes": "openid email",
-            "expiresAt": "2024-12-31T23:59:59Z",
-            "createdAt": "2024-01-01T00:00:00Z"
+            "accessTokenExpiresAt": "2024-12-31T23:59:59Z",
+            "createdAt": "2024-01-01T00:00:00Z",
+            "updatedAt": "2024-01-01T00:00:00Z"
         });
         let token: OAuthAccessToken = serde_json::from_value(v).unwrap();
-        assert_eq!(token.token, "access-token-xyz");
+        assert_eq!(token.access_token, "access-token-xyz");
         assert_eq!(token.scopes, "openid email");
     }
 
@@ -125,7 +130,9 @@ mod oidc_type_tests {
             "userId": "user-1",
             "clientId": "client-1",
             "scopes": "openid email",
-            "createdAt": "2024-01-01T00:00:00Z"
+            "consentGiven": true,
+            "createdAt": "2024-01-01T00:00:00Z",
+            "updatedAt": "2024-01-01T00:00:00Z"
         });
         let consent: OAuthConsent = serde_json::from_value(v).unwrap();
         assert_eq!(consent.user_id, "user-1");
@@ -218,7 +225,7 @@ mod oidc_type_tests {
             "response_types": ["code"]
         });
         let req: RegisterClientBody = serde_json::from_value(v).unwrap();
-        assert_eq!(req.client_name, "New App");
+        assert_eq!(req.client_name, Some("New App".into()));
         assert_eq!(req.redirect_uris.len(), 1);
     }
 
@@ -234,7 +241,6 @@ mod oidc_type_tests {
             picture: None,
             given_name: Some("John".into()),
             family_name: Some("Doe".into()),
-            preferred_username: None,
             updated_at: None,
         };
         let v = serde_json::to_value(&resp).unwrap();
@@ -254,9 +260,9 @@ mod oidc_type_tests {
 
     #[test]
     fn oidc_error_serde_unauthorized_client() {
-        let err = OidcError::unauthorized_client("Client not found");
+        let err = OidcError::invalid_client("Client not found");
         let v = serde_json::to_value(&err).unwrap();
-        assert_eq!(v["error"], "unauthorized_client");
+        assert_eq!(v["error"], "invalid_client");
     }
 
     #[test]
@@ -272,16 +278,16 @@ mod oidc_options_tests {
     use better_auth::plugins::oidc_provider::*;
 
     #[test]
-    fn oidc_options_default() {
-        let opts = OidcOptions::default();
+    fn oidc_provider_options_default() {
+        let opts = OidcProviderOptions::default();
         assert!(opts.access_token_expires_in > 0);
         assert!(opts.refresh_token_expires_in > 0);
         assert!(opts.code_expires_in > 0);
     }
 
     #[test]
-    fn oidc_options_custom_expiry() {
-        let mut opts = OidcOptions::default();
+    fn oidc_provider_options_custom_expiry() {
+        let mut opts = OidcProviderOptions::default();
         opts.access_token_expires_in = 7200;
         opts.refresh_token_expires_in = 86400 * 30;
         assert_eq!(opts.access_token_expires_in, 7200);
@@ -292,13 +298,14 @@ mod oidc_options_tests {
     fn trusted_client_config() {
         let client = TrustedClient {
             client_id: "trusted-1".into(),
-            client_secret: "secret".into(),
+            client_secret: Some("secret".into()),
             name: "Trusted App".into(),
-            redirect_uris: vec!["http://localhost:3000/cb".into()],
-            scopes: "openid".into(),
-            icon: None,
+            redirect_urls: vec!["http://localhost:3000/cb".into()],
+            r#type: None,
+            skip_consent: false,
+            disabled: false,
         };
         assert_eq!(client.client_id, "trusted-1");
-        assert_eq!(client.redirect_uris.len(), 1);
+        assert_eq!(client.redirect_urls.len(), 1);
     }
 }

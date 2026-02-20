@@ -7,6 +7,7 @@
 // Each function captures OrganizationOptions at registration time and
 // receives AuthContext (via type-erased Arc) + PluginHandlerRequest at runtime.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use better_auth_core::plugin::{
@@ -303,7 +304,7 @@ pub fn invite_member_handler(options: OrganizationOptions) -> PluginHandlerFn {
                 Err(e) => return PluginHandlerResponse::error(400, "BAD_REQUEST", &format!("Invalid body: {}", e)),
             };
             match routes_members::handle_invite_member(
-                &adapter, &user_id, active_org_id.as_deref(), &options, body,
+                &adapter, &user_id, &options, body,
             ).await {
                 Ok(invitation) => PluginHandlerResponse::ok(serde_json::to_value(invitation).unwrap_or_default()),
                 Err(e) => org_error_to_response(e),
@@ -313,8 +314,9 @@ pub fn invite_member_handler(options: OrganizationOptions) -> PluginHandlerFn {
 }
 
 /// POST /organization/accept-invitation
-pub fn accept_invitation_handler() -> PluginHandlerFn {
+pub fn accept_invitation_handler(options: OrganizationOptions) -> PluginHandlerFn {
     Arc::new(move |ctx_any, req| {
+        let options = options.clone();
         Box::pin(async move {
             let ctx = extract_ctx(&ctx_any);
             let user_id = match extract_user_id(&req) {
@@ -322,11 +324,12 @@ pub fn accept_invitation_handler() -> PluginHandlerFn {
                 None => return PluginHandlerResponse::error(401, "UNAUTHORIZED", "Not authenticated"),
             };
             let adapter = build_adapter(&ctx);
-            let body: AcceptInvitationRequest = match serde_json::from_value(req.body.clone()) {
+            let session_token = req.session_token.clone();
+            let body: InvitationActionRequest = match serde_json::from_value(req.body.clone()) {
                 Ok(b) => b,
                 Err(e) => return PluginHandlerResponse::error(400, "BAD_REQUEST", &format!("Invalid body: {}", e)),
             };
-            match routes_members::handle_accept_invitation(&adapter, &user_id, body).await {
+            match routes_members::handle_accept_invitation(&adapter, &user_id, session_token.as_deref(), &options, body).await {
                 Ok(member) => PluginHandlerResponse::ok(serde_json::to_value(member).unwrap_or_default()),
                 Err(e) => org_error_to_response(e),
             }
@@ -338,17 +341,13 @@ pub fn accept_invitation_handler() -> PluginHandlerFn {
 pub fn reject_invitation_handler() -> PluginHandlerFn {
     Arc::new(move |ctx_any, req| {
         Box::pin(async move {
-            let ctx = extract_ctx(&ctx_any);
-            let user_id = match extract_user_id(&req) {
-                Some(id) => id,
-                None => return PluginHandlerResponse::error(401, "UNAUTHORIZED", "Not authenticated"),
-            };
-            let adapter = build_adapter(&ctx);
-            let body: RejectInvitationRequest = match serde_json::from_value(req.body.clone()) {
+            let _ctx = extract_ctx(&ctx_any);
+            let adapter = build_adapter(&_ctx);
+            let body: InvitationActionRequest = match serde_json::from_value(req.body.clone()) {
                 Ok(b) => b,
                 Err(e) => return PluginHandlerResponse::error(400, "BAD_REQUEST", &format!("Invalid body: {}", e)),
             };
-            match routes_members::handle_reject_invitation(&adapter, &user_id, body).await {
+            match routes_members::handle_reject_invitation(&adapter, body).await {
                 Ok(invitation) => PluginHandlerResponse::ok(serde_json::to_value(invitation).unwrap_or_default()),
                 Err(e) => org_error_to_response(e),
             }
@@ -368,12 +367,12 @@ pub fn cancel_invitation_handler(options: OrganizationOptions) -> PluginHandlerF
             };
             let adapter = build_adapter(&ctx);
             let active_org_id = extract_active_org_id(&req);
-            let body: CancelInvitationRequest = match serde_json::from_value(req.body.clone()) {
+            let body: InvitationActionRequest = match serde_json::from_value(req.body.clone()) {
                 Ok(b) => b,
                 Err(e) => return PluginHandlerResponse::error(400, "BAD_REQUEST", &format!("Invalid body: {}", e)),
             };
             match routes_members::handle_cancel_invitation(
-                &adapter, &user_id, active_org_id.as_deref(), &options, body,
+                &adapter, &user_id, &options, body,
             ).await {
                 Ok(invitation) => PluginHandlerResponse::ok(serde_json::to_value(invitation).unwrap_or_default()),
                 Err(e) => org_error_to_response(e),
@@ -417,7 +416,7 @@ pub fn remove_member_handler(options: OrganizationOptions) -> PluginHandlerFn {
                 Err(e) => return PluginHandlerResponse::error(400, "BAD_REQUEST", &format!("Invalid body: {}", e)),
             };
             match routes_members::handle_remove_member(
-                &adapter, &user_id, active_org_id.as_deref(), &options, body,
+                &adapter, &user_id, &options, body,
             ).await {
                 Ok(member) => PluginHandlerResponse::ok(serde_json::to_value(member).unwrap_or_default()),
                 Err(e) => org_error_to_response(e),
@@ -468,8 +467,9 @@ pub fn leave_organization_handler(options: OrganizationOptions) -> PluginHandler
                 Ok(b) => b,
                 Err(e) => return PluginHandlerResponse::error(400, "BAD_REQUEST", &format!("Invalid body: {}", e)),
             };
+            let session_token = req.session_token.clone();
             match routes_members::handle_leave_organization(
-                &adapter, &user_id, active_org_id.as_deref(), &options, body,
+                &adapter, &user_id, session_token.as_deref(), active_org_id.as_deref(), body,
             ).await {
                 Ok(_) => PluginHandlerResponse::ok(serde_json::json!({"success": true})),
                 Err(e) => org_error_to_response(e),
@@ -496,7 +496,7 @@ pub fn list_members_handler() -> PluginHandlerFn {
                 Some(id) => id,
                 None => return PluginHandlerResponse::error(400, "BAD_REQUEST", "Missing organizationId"),
             };
-            match routes_members::handle_list_members(&adapter, &org_id, &user_id).await {
+            match routes_members::handle_list_members(&adapter, &user_id, &org_id).await {
                 Ok(members) => PluginHandlerResponse::ok(serde_json::to_value(members).unwrap_or_default()),
                 Err(e) => org_error_to_response(e),
             }
@@ -697,7 +697,7 @@ pub fn get_permissions_handler(options: OrganizationOptions) -> PluginHandlerFn 
     Arc::new(move |_ctx_any, _req| {
         let options = options.clone();
         Box::pin(async move {
-            match routes_access::handle_get_permissions(&options) {
+            match routes_access::handle_get_permissions(&options).await {
                 Ok(result) => PluginHandlerResponse::ok(result),
                 Err(e) => org_error_to_response(e),
             }
@@ -995,9 +995,9 @@ pub fn set_active_team_handler() -> PluginHandlerFn {
             PluginHandlerResponse {
                 status: 200,
                 body: serde_json::json!({"activeTeamId": team_id}),
-                headers: vec![
+                headers: HashMap::from([
                     ("Set-Cookie".into(), format!("active_team_id={}; Path=/; HttpOnly; SameSite=Lax", team_id)),
-                ],
+                ]),
                 redirect: None,
             }
         })
@@ -1028,7 +1028,7 @@ pub fn list_user_teams_handler() -> PluginHandlerFn {
                         .collect();
                     let mut teams = Vec::new();
                     for tid in &team_ids {
-                        if let Ok(Some(team)) = ctx.adapter.find_by_id("team", tid).await {
+                        if let Ok(team) = ctx.adapter.find_by_id("team", tid).await {
                             teams.push(team);
                         }
                     }
@@ -1062,7 +1062,7 @@ pub fn list_team_members_handler() -> PluginHandlerFn {
                     for member in &members {
                         let mut m = member.clone();
                         if let Some(uid) = member.get("userId").and_then(|v| v.as_str()) {
-                            if let Ok(Some(user)) = ctx.adapter.find_by_id("user", uid).await {
+                            if let Ok(user) = ctx.adapter.find_by_id("user", uid).await {
                                 m.as_object_mut().map(|obj| obj.insert("user".to_string(), user));
                             }
                         }

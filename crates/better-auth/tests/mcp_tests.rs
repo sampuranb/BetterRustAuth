@@ -97,11 +97,13 @@ mod mcp_type_tests {
             "clientId": "mcp-client-1",
             "clientSecret": "hashed-secret",
             "name": "MCP App",
-            "redirectUris": ["http://localhost:8080/callback"],
-            "scopes": "openid",
+            "redirectUrls": ["http://localhost:8080/callback"],
+            "type": "web",
+            "authenticationScheme": "header",
             "metadata": null,
             "disabled": false,
-            "createdAt": "2024-01-01T00:00:00Z"
+            "createdAt": "2024-01-01T00:00:00Z",
+            "updatedAt": "2024-01-01T00:00:00Z"
         });
         let client: McpClient = serde_json::from_value(v).unwrap();
         assert_eq!(client.client_id, "mcp-client-1");
@@ -118,7 +120,7 @@ mod mcp_type_tests {
             "token_endpoint_auth_method": "client_secret_post"
         });
         let body: McpRegisterBody = serde_json::from_value(v).unwrap();
-        assert_eq!(body.client_name, "New MCP Client");
+        assert_eq!(body.client_name, Some("New MCP Client".into()));
         assert_eq!(body.redirect_uris.len(), 1);
     }
 
@@ -127,7 +129,9 @@ mod mcp_type_tests {
         let resp = McpRegisterResponse {
             client_id: "new-client-id".into(),
             client_secret: Some("generated-secret".into()),
-            client_name: "New Client".into(),
+            client_name: Some("New Client".into()),
+            client_uri: None,
+            logo_uri: None,
             redirect_uris: vec!["http://localhost/cb".into()],
             grant_types: vec!["authorization_code".into()],
             response_types: vec!["code".into()],
@@ -179,6 +183,7 @@ mod mcp_type_tests {
             expires_in: 3600,
             refresh_token: Some("rt_xyz".into()),
             scope: Some("openid".into()),
+            id_token: None,
         };
         let v = serde_json::to_value(&resp).unwrap();
         assert_eq!(v["token_type"], "Bearer");
@@ -189,15 +194,16 @@ mod mcp_type_tests {
     fn mcp_access_token_serde() {
         let v = json!({
             "id": "at-1",
-            "token": "access-token",
+            "accessToken": "access-token",
             "userId": "user-1",
             "clientId": "mc-1",
             "scopes": "openid",
-            "expiresAt": "2024-12-31T23:59:59Z",
-            "createdAt": "2024-01-01T00:00:00Z"
+            "accessTokenExpiresAt": "2024-12-31T23:59:59Z",
+            "createdAt": "2024-01-01T00:00:00Z",
+            "updatedAt": "2024-01-01T00:00:00Z"
         });
         let token: McpAccessToken = serde_json::from_value(v).unwrap();
-        assert_eq!(token.token, "access-token");
+        assert_eq!(token.access_token, "access-token");
     }
 
     #[test]
@@ -209,7 +215,8 @@ mod mcp_type_tests {
             "userId": "user-1",
             "clientId": "mc-1",
             "expiresAt": "2024-12-31T23:59:59Z",
-            "createdAt": "2024-01-01T00:00:00Z"
+            "createdAt": "2024-01-01T00:00:00Z",
+            "updatedAt": "2024-01-01T00:00:00Z"
         });
         let token: McpRefreshToken = serde_json::from_value(v).unwrap();
         assert_eq!(token.token, "refresh-token");
@@ -222,21 +229,21 @@ mod mcp_error_tests {
 
     #[test]
     fn mcp_error_display() {
-        let err = McpError::InvalidClient;
+        let err = McpError::invalid_client("Client not found");
         let msg = format!("{}", err);
         assert!(!msg.is_empty());
     }
 
     #[test]
     fn mcp_error_invalid_request() {
-        let err = McpError::InvalidRequest("Missing parameter".into());
+        let err = McpError::invalid_request("Missing parameter");
         let msg = format!("{}", err);
         assert!(msg.contains("Missing") || !msg.is_empty());
     }
 
     #[test]
     fn mcp_error_invalid_grant() {
-        let err = McpError::InvalidGrant;
+        let err = McpError::invalid_grant("Grant expired");
         let msg = format!("{}", err);
         assert!(!msg.is_empty());
     }

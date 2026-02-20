@@ -1,20 +1,4 @@
-// better-auth-actix — Actix-web HTTP integration for Better Auth
-//
-// Provides a ready-to-use Actix-web service configuration with all auth
-// endpoints wired up. This is the Actix-web counterpart of better-auth-axum.
-//
-// Maps to: packages/better-auth/src/integrations/node.ts (toNodeHandler)
-//        + packages/better-auth/src/api/index.ts (router)
-//
-// Usage:
-//
-//   let auth = BetterAuth::new(options, adapter);
-//   HttpServer::new(move || {
-//       App::new().configure(auth.configure())
-//   })
-//   .bind("0.0.0.0:3000")?
-//   .run()
-//   .await
+#![doc = include_str!("../README.md")]
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -207,7 +191,7 @@ impl From<routes::account::UnlinkError> for ApiError {
 // ─── Cookie / Token Extraction ──────────────────────────────────
 
 /// Extract the session token from cookies or Authorization header.
-fn extract_session_token(req: &HttpRequest) -> Option<String> {
+fn extract_session_token(req: &HttpRequest, ctx: &AuthContext) -> Option<String> {
     // Try Authorization: Bearer <token>
     if let Some(auth) = req.headers().get("authorization") {
         if let Ok(val) = auth.to_str() {
@@ -217,13 +201,20 @@ fn extract_session_token(req: &HttpRequest) -> Option<String> {
         }
     }
 
-    // Try cookie
+    // Try cookie with configurable prefix
+    let prefix = ctx.options.advanced.cookie_prefix.as_deref().unwrap_or("better-auth");
+    let cookie_name = format!("{}.session_token", prefix);
+    let secure_cookie_name = format!("__Secure-{}", cookie_name);
+
     if let Some(cookie_header) = req.headers().get("cookie") {
         if let Ok(cookies) = cookie_header.to_str() {
             for cookie in cookies.split(';') {
                 let cookie = cookie.trim();
-                if let Some(token) = cookie.strip_prefix("better-auth.session_token=") {
-                    return Some(token.to_string());
+                if let Some((name, value)) = cookie.split_once('=') {
+                    let name = name.trim();
+                    if name == secure_cookie_name || name == cookie_name {
+                        return Some(value.to_string());
+                    }
                 }
             }
         }
@@ -325,27 +316,36 @@ impl BetterAuth {
                         .route("/sign-in/social", web::post().to(handle_social_sign_in))
                         .route("/sign-out", web::post().to(handle_sign_out))
                         .route("/session", web::get().to(handle_get_session))
+                        .route("/get-session", web::get().to(handle_get_session))
                         .route("/list-sessions", web::get().to(handle_list_sessions))
                         .route("/revoke-session", web::post().to(handle_revoke_session))
                         .route("/revoke-sessions", web::post().to(handle_revoke_sessions))
                         .route("/revoke-other-sessions", web::post().to(handle_revoke_other_sessions))
                         // OAuth
                         .route("/callback/{provider}", web::get().to(handle_callback))
+                        .route("/callback/{provider}", web::post().to(handle_callback_post))
                         // User
                         .route("/update-user", web::post().to(handle_update_user))
                         .route("/delete-user", web::post().to(handle_delete_user))
+                        .route("/delete-user/callback", web::get().to(handle_delete_user_callback))
                         // Password
                         .route("/change-password", web::post().to(handle_change_password))
-                        .route("/forgot-password", web::post().to(handle_forgot_password))
+                        .route("/request-password-reset", web::post().to(handle_forgot_password))
                         .route("/reset-password", web::post().to(handle_reset_password))
+                        .route("/reset-password/{token}", web::get().to(handle_reset_password_callback))
                         .route("/verify-password", web::post().to(handle_verify_password))
+                        .route("/set-password", web::post().to(handle_set_password))
                         // Account
                         .route("/list-accounts", web::get().to(handle_list_accounts))
                         .route("/unlink-account", web::post().to(handle_unlink_account))
                         .route("/link-social", web::post().to(handle_link_social))
+                        .route("/get-access-token", web::post().to(handle_get_access_token))
+                        .route("/refresh-token", web::post().to(handle_refresh_token))
+                        .route("/account-info", web::get().to(handle_account_info))
                         // Email verification
                         .route("/verify-email", web::get().to(handle_verify_email))
                         .route("/send-verification-email", web::post().to(handle_send_verification))
+                        .route("/change-email", web::post().to(handle_change_email))
                         // Error page
                         .route("/error", web::get().to(handle_error_page))
                         // Plugin dispatch — catch-all for any path not handled above
@@ -420,7 +420,7 @@ async fn handle_plugin_dispatch(
     }
 
     // Extract session token
-    let session_token = extract_session_token(&req);
+    let session_token = extract_session_token(&req, ctx.get_ref());
 
     // If endpoint requires auth, validate the session
     let session = if endpoint_router::endpoint_requires_auth(&ctx.plugin_registry, plugin_method, &path) {
@@ -502,8 +502,8 @@ async fn handle_plugin_dispatch(
     ).await {
         Some(response) => plugin_response_to_actix(response),
         None => {
-            HttpResponse::NotImplemented()
-                .json(serde_json::json!({"error": "Endpoint exists but handler not implemented", "path": path}))
+            HttpResponse::NotFound()
+                .json(serde_json::json!({"error": "Not found", "path": path}))
         }
     }
 }
@@ -512,7 +512,7 @@ async fn handle_plugin_dispatch(
 fn plugin_response_to_actix(resp: better_auth_core::plugin::PluginHandlerResponse) -> HttpResponse {
     // Handle redirects
     if let Some(ref url) = resp.redirect {
-        return HttpResponse::TemporaryRedirect()
+        return HttpResponse::Found()
             .insert_header(("Location", url.as_str()))
             .finish();
     }
@@ -587,8 +587,8 @@ fn generic_response_to_http(resp: GenericResponse) -> HttpResponse {
 // ─── Helpers ────────────────────────────────────────────────────
 
 /// Require a session token, returning an error response if missing.
-fn require_token(req: &HttpRequest) -> Result<String, ApiError> {
-    extract_session_token(req).ok_or_else(|| ApiError {
+fn require_token(req: &HttpRequest, ctx: &AuthContext) -> Result<String, ApiError> {
+    extract_session_token(req, ctx).ok_or_else(|| ApiError {
         status: actix_web::http::StatusCode::UNAUTHORIZED,
         code: "UNAUTHORIZED".to_string(),
         message: "Authentication required".to_string(),
@@ -689,14 +689,7 @@ async fn handle_social_sign_in(
     let result =
         routes::sign_in::handle_social_sign_in(ctx.get_ref().clone(), body.into_inner()).await?;
 
-    if result.redirect == Some(true) {
-        if let Some(ref url) = result.url {
-            return Ok(HttpResponse::TemporaryRedirect()
-                .append_header(("Location", url.as_str()))
-                .finish());
-        }
-    }
-
+    // Always return JSON — the TS client SDK does the redirect client-side
     Ok(HttpResponse::Ok().json(result))
 }
 
@@ -704,17 +697,27 @@ async fn handle_sign_out(
     ctx: Data<Arc<AuthContext>>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ApiError> {
-    let token = extract_session_token(&req);
+    let token = extract_session_token(&req, ctx.get_ref());
     let result =
         routes::sign_out::handle_sign_out(ctx.get_ref().clone(), token.as_deref()).await?;
-    Ok(HttpResponse::Ok().json(result.response))
+
+    // Build cookie deletion headers matching TS behavior
+    let mut builder = HttpResponse::Ok();
+    for cookie_name in &result.cookies_to_delete {
+        let cookie_header = format!(
+            "{}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+            cookie_name
+        );
+        builder.append_header(("Set-Cookie", cookie_header));
+    }
+    Ok(builder.json(result.response))
 }
 
 async fn handle_get_session(
     ctx: Data<Arc<AuthContext>>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ApiError> {
-    let token = match extract_session_token(&req) {
+    let token = match extract_session_token(&req, ctx.get_ref()) {
         Some(t) => t,
         None => return Ok(HttpResponse::Ok().json(serde_json::Value::Null)),
     };
@@ -757,7 +760,7 @@ async fn handle_callback(
         user: q.user,
     };
     let result = routes::callback::handle_callback(ctx.get_ref().clone(), callback_query).await?;
-    Ok(HttpResponse::TemporaryRedirect()
+    Ok(HttpResponse::Found()
         .append_header(("Location", result.url()))
         .finish())
 }
@@ -767,7 +770,7 @@ async fn handle_update_user(
     req: HttpRequest,
     body: Json<routes::update_user::UpdateUserRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let token = require_token(&req)?;
+    let token = require_token(&req, ctx.get_ref())?;
     let session = require_session(ctx.get_ref(), &token).await?;
     let user_id = user_id_from_session(&session)?;
     let result =
@@ -781,7 +784,7 @@ async fn handle_delete_user(
     req: HttpRequest,
     body: Json<routes::update_user::DeleteUserRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let token = require_token(&req)?;
+    let token = require_token(&req, ctx.get_ref())?;
     let session = require_session(ctx.get_ref(), &token).await?;
     let user_id = user_id_from_session(&session)?;
     let result =
@@ -795,7 +798,7 @@ async fn handle_change_password(
     req: HttpRequest,
     body: Json<routes::password::ChangePasswordRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let token = require_token(&req)?;
+    let token = require_token(&req, ctx.get_ref())?;
     let session = require_session(ctx.get_ref(), &token).await?;
     let user_id = user_id_from_session(&session)?;
     routes::password::handle_change_password(ctx.get_ref().clone(), &user_id, body.into_inner())
@@ -821,12 +824,30 @@ async fn handle_reset_password(
     Ok(HttpResponse::Ok().json(result))
 }
 
+async fn handle_reset_password_callback(
+    ctx: Data<Arc<AuthContext>>,
+    path: web::Path<String>,
+    query: Query<routes::password::PasswordResetCallbackQuery>,
+) -> Result<HttpResponse, ApiError> {
+    let token = path.into_inner();
+    let result = routes::password::handle_password_reset_callback(
+        ctx.get_ref().clone(), &token, query.into_inner()
+    ).await;
+    let url = match result {
+        routes::password::PasswordResetCallbackResult::Redirect(u) |
+        routes::password::PasswordResetCallbackResult::ErrorRedirect(u) => u,
+    };
+    Ok(HttpResponse::Found()
+        .append_header(("Location", url))
+        .finish())
+}
+
 async fn handle_verify_password(
     ctx: Data<Arc<AuthContext>>,
     req: HttpRequest,
     body: Json<routes::password::VerifyPasswordRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let token = require_token(&req)?;
+    let token = require_token(&req, ctx.get_ref())?;
     let session = require_session(ctx.get_ref(), &token).await?;
     let user_id = user_id_from_session(&session)?;
     let result = routes::password::handle_verify_password(
@@ -842,7 +863,7 @@ async fn handle_list_accounts(
     ctx: Data<Arc<AuthContext>>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ApiError> {
-    let token = require_token(&req)?;
+    let token = require_token(&req, ctx.get_ref())?;
     let session = require_session(ctx.get_ref(), &token).await?;
     let user_id = user_id_from_session(&session)?;
     let result = routes::account::handle_list_accounts(ctx.get_ref().clone(), &user_id).await?;
@@ -854,7 +875,7 @@ async fn handle_unlink_account(
     req: HttpRequest,
     body: Json<routes::account::UnlinkAccountRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let token = require_token(&req)?;
+    let token = require_token(&req, ctx.get_ref())?;
     let session = require_session(ctx.get_ref(), &token).await?;
     let user_id = user_id_from_session(&session)?;
     let result = routes::account::handle_unlink_account(
@@ -871,7 +892,7 @@ async fn handle_link_social(
     req: HttpRequest,
     body: Json<routes::account::LinkSocialRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let token = require_token(&req)?;
+    let token = require_token(&req, ctx.get_ref())?;
     let session = require_session(ctx.get_ref(), &token).await?;
     let user_id = user_id_from_session(&session)?;
     let user_email = session.user["email"]
@@ -942,13 +963,204 @@ async fn handle_error_page(query: Query<ErrorPageQueryParams>) -> HttpResponse {
         .body(html)
 }
 
+// ─── Callback POST Handler ─────────────────────────────────────
+
+async fn handle_callback_post(
+    ctx: Data<Arc<AuthContext>>,
+    path: web::Path<String>,
+    query: Query<CallbackQueryParams>,
+    body: web::Bytes,
+) -> HttpResponse {
+    // Parse body as CallbackQuery (handles both JSON and form-encoded)
+    let body_query: routes::callback::CallbackQuery = if body.is_empty() {
+        routes::callback::CallbackQuery {
+            code: None, state: None, error: None,
+            error_description: None, device_id: None, user: None,
+        }
+    } else {
+        serde_json::from_slice(&body)
+            .unwrap_or_else(|_| {
+                // Parse application/x-www-form-urlencoded manually
+                let body_str = String::from_utf8_lossy(&body);
+                let mut code = None;
+                let mut state = None;
+                let mut error = None;
+                let mut error_description = None;
+                let mut device_id = None;
+                let mut user = None;
+                for pair in body_str.split('&') {
+                    if let Some((key, value)) = pair.split_once('=') {
+                        let value = value.replace('+', " ");
+                        match key {
+                            "code" => code = Some(value),
+                            "state" => state = Some(value),
+                            "error" => error = Some(value),
+                            "error_description" => error_description = Some(value),
+                            "device_id" => device_id = Some(value),
+                            "user" => user = Some(value),
+                            _ => {}
+                        }
+                    }
+                }
+                routes::callback::CallbackQuery {
+                    code, state, error, error_description, device_id, user,
+                }
+            })
+    };
+
+    let q = query.into_inner();
+    let url_query = routes::callback::CallbackQuery {
+        code: q.code,
+        state: q.state,
+        error: q.error,
+        error_description: q.error_description,
+        device_id: q.device_id,
+        user: q.user,
+    };
+
+    let provider = path.into_inner();
+    let base_url = ctx.base_url.as_deref().unwrap_or("");
+    let full_base = format!("{}{}", base_url, ctx.base_path);
+
+    let result = routes::callback::handle_callback_post(
+        &full_base, &provider, &body_query, &url_query,
+    );
+    HttpResponse::Found()
+        .append_header(("Location", result.url()))
+        .finish()
+}
+
+// ─── Set Password Handler ──────────────────────────────────────
+
+async fn handle_set_password(
+    ctx: Data<Arc<AuthContext>>,
+    req: HttpRequest,
+    body: Json<routes::update_user::SetPasswordRequest>,
+) -> Result<HttpResponse, ApiError> {
+    let token = require_token(&req, ctx.get_ref())?;
+    let session = require_session(ctx.get_ref(), &token).await?;
+    let user_id = user_id_from_session(&session)?;
+    let result = routes::update_user::handle_set_password(
+        ctx.get_ref().clone(), &user_id, body.into_inner(),
+    )
+    .await
+    .map_err(|e| ApiError {
+        status: actix_web::http::StatusCode::BAD_REQUEST,
+        code: "SET_PASSWORD_ERROR".to_string(),
+        message: e.to_string(),
+    })?;
+    Ok(HttpResponse::Ok().json(result))
+}
+
+// ─── Get Access Token Handler ──────────────────────────────────
+
+async fn handle_get_access_token(
+    ctx: Data<Arc<AuthContext>>,
+    req: HttpRequest,
+    body: Json<routes::account::GetAccessTokenRequest>,
+) -> Result<HttpResponse, ApiError> {
+    let token = require_token(&req, ctx.get_ref())?;
+    let session = require_session(ctx.get_ref(), &token).await?;
+    let user_id = user_id_from_session(&session)?;
+    let result = routes::account::handle_get_access_token(
+        ctx.get_ref().clone(), &user_id, body.into_inner(),
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(result))
+}
+
+// ─── Refresh Token Handler ─────────────────────────────────────
+
+async fn handle_refresh_token(
+    ctx: Data<Arc<AuthContext>>,
+    req: HttpRequest,
+    body: Json<routes::account::RefreshTokenRequest>,
+) -> Result<HttpResponse, ApiError> {
+    let token = require_token(&req, ctx.get_ref())?;
+    let session = require_session(ctx.get_ref(), &token).await?;
+    let user_id = user_id_from_session(&session)?;
+    let result = routes::account::handle_refresh_token(
+        ctx.get_ref().clone(), &user_id, body.into_inner(),
+    )
+    .await
+    .map_err(|e: routes::account::RefreshTokenError| ApiError {
+        status: actix_web::http::StatusCode::BAD_REQUEST,
+        code: "REFRESH_TOKEN_ERROR".to_string(),
+        message: e.to_string(),
+    })?;
+    Ok(HttpResponse::Ok().json(result))
+}
+
+// ─── Account Info Handler ──────────────────────────────────────
+
+async fn handle_account_info(
+    ctx: Data<Arc<AuthContext>>,
+    req: HttpRequest,
+    query: Query<routes::account::AccountInfoQuery>,
+) -> Result<HttpResponse, ApiError> {
+    let token = require_token(&req, ctx.get_ref())?;
+    let session = require_session(ctx.get_ref(), &token).await?;
+    let user_id = user_id_from_session(&session)?;
+    let result = routes::account::handle_account_info(
+        ctx.get_ref().clone(), &user_id, query.into_inner(),
+    )
+    .await
+    .map_err(|e: routes::account::AccountInfoError| ApiError {
+        status: actix_web::http::StatusCode::BAD_REQUEST,
+        code: "ACCOUNT_INFO_ERROR".to_string(),
+        message: e.to_string(),
+    })?;
+    Ok(HttpResponse::Ok().json(result))
+}
+
+// ─── Delete User Callback Handler ──────────────────────────────
+
+async fn handle_delete_user_callback(
+    ctx: Data<Arc<AuthContext>>,
+    query: Query<routes::update_user::DeleteUserCallbackQuery>,
+) -> Result<HttpResponse, ApiError> {
+    // For delete-user/callback, the session is optional
+    let result = routes::update_user::handle_delete_user_callback(
+        ctx.get_ref().clone(), None, query.into_inner(),
+    )
+    .await
+    .map_err(|e| ApiError {
+        status: actix_web::http::StatusCode::BAD_REQUEST,
+        code: "DELETE_USER_CALLBACK_ERROR".to_string(),
+        message: e.to_string(),
+    })?;
+    Ok(HttpResponse::Ok().json(result))
+}
+
+// ─── Change Email Handler ──────────────────────────────────────
+
+async fn handle_change_email(
+    ctx: Data<Arc<AuthContext>>,
+    req: HttpRequest,
+    body: Json<routes::update_user::ChangeEmailRequest>,
+) -> Result<HttpResponse, ApiError> {
+    let token = require_token(&req, ctx.get_ref())?;
+    let session = require_session(ctx.get_ref(), &token).await?;
+    let user_id = user_id_from_session(&session)?;
+    let result = routes::update_user::handle_change_email(
+        ctx.get_ref().clone(), &user_id, body.into_inner(),
+    )
+    .await
+    .map_err(|e| ApiError {
+        status: actix_web::http::StatusCode::BAD_REQUEST,
+        code: "CHANGE_EMAIL_ERROR".to_string(),
+        message: e.to_string(),
+    })?;
+    Ok(HttpResponse::Ok().json(result))
+}
+
 // ─── Session Management Handlers ────────────────────────────────
 
 async fn handle_list_sessions(
     ctx: Data<Arc<AuthContext>>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ApiError> {
-    let token = require_token(&req)?;
+    let token = require_token(&req, ctx.get_ref())?;
     let session = require_session(ctx.get_ref(), &token).await?;
     let user_id = user_id_from_session(&session)?;
     let result = routes::session::handle_list_sessions(ctx.get_ref().clone(), &user_id).await?;
@@ -965,7 +1177,7 @@ async fn handle_revoke_session(
     req: HttpRequest,
     body: Json<RevokeSessionRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let token = require_token(&req)?;
+    let token = require_token(&req, ctx.get_ref())?;
     let session = require_session(ctx.get_ref(), &token).await?;
     let user_id = user_id_from_session(&session)?;
     let result =
@@ -978,7 +1190,7 @@ async fn handle_revoke_sessions(
     ctx: Data<Arc<AuthContext>>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ApiError> {
-    let token = require_token(&req)?;
+    let token = require_token(&req, ctx.get_ref())?;
     let session = require_session(ctx.get_ref(), &token).await?;
     let user_id = user_id_from_session(&session)?;
     let result = routes::session::handle_revoke_sessions(ctx.get_ref().clone(), &user_id).await?;
@@ -989,7 +1201,7 @@ async fn handle_revoke_other_sessions(
     ctx: Data<Arc<AuthContext>>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ApiError> {
-    let token = require_token(&req)?;
+    let token = require_token(&req, ctx.get_ref())?;
     let session = require_session(ctx.get_ref(), &token).await?;
     let user_id = user_id_from_session(&session)?;
     let session_token = session.session["token"]

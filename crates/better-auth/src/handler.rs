@@ -703,8 +703,8 @@ async fn route_request(
             }
         }
 
-        // Forgot password
-        ("POST", "/forgot-password") => {
+        // Request password reset (matches TS path /request-password-reset)
+        ("POST", "/request-password-reset") => {
             match request.json::<routes::password::ForgotPasswordRequest>() {
                 Ok(body) => match routes::password::handle_forgot_password(ctx, body).await {
                     Ok(result) => GenericResponse::json(200, &result),

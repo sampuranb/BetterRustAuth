@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 pub mod db;
 pub mod env;
 pub mod error;

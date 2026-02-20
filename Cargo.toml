@@ -82,6 +82,9 @@ tower-http = { version = "0.6", features = ["cors"] }
 # Database
 sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "any", "sqlite", "json"] }
 
+# Unicode
+unicode-normalization = "0.1"
+
 # Utils
 uuid = { version = "1", features = ["v4"] }
 regex = "1"

@@ -1,6 +1,4 @@
-// better-auth — main library crate
-//
-// Wires together crypto, cookies, state, internal adapter, routes, middleware, and plugins.
+#![doc = include_str!("../README.md")]
 
 pub mod api;
 pub mod context;

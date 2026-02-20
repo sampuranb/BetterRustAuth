@@ -133,8 +133,7 @@ pub async fn handle_get_session(
     session_token: &str,
     options: GetSessionOptions,
 ) -> Result<GetSessionResult, AdapterError> {
-    // deferSessionRefresh is not yet a config field — default to false
-    let defer_session_refresh = false;
+    let defer_session_refresh = ctx.session_config.defer_session_refresh;
 
     // POST is only allowed when deferSessionRefresh is enabled
     if options.is_post && !defer_session_refresh {

@@ -438,7 +438,7 @@ impl BetterAuthPlugin for GenericOAuthPlugin {
                         "{}?client_id={}&redirect_uri={}&state={}&response_type=code&scope={}",
                         provider.authorization_url,
                         provider.client_id,
-                        urlencoding::encode(&format!("{}/callback/oauth2/{}", ctx.base_url, provider.id)),
+                        urlencoding::encode(&format!("{}/callback/oauth2/{}", ctx.base_url.as_deref().unwrap_or(""), provider.id)),
                         state,
                         urlencoding::encode(&provider.scopes.join(" ")),
                     );
@@ -459,14 +459,14 @@ impl BetterAuthPlugin for GenericOAuthPlugin {
                     let error_param = req.query.get("error").and_then(|v| v.as_str()).unwrap_or("").to_string();
                     let code = req.query.get("code").and_then(|v| v.as_str()).unwrap_or("").to_string();
                     let state = req.query.get("state").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let default_error_url = format!("{}/error", ctx.base_url);
+                    let default_error_url = format!("{}/error", ctx.base_url.as_deref().unwrap_or(""));
 
                     // Handle error from provider
                     if !error_param.is_empty() || code.is_empty() {
                         let error = if error_param.is_empty() { "oAuth_code_missing".to_string() } else { error_param };
                         let error_desc = req.query.get("error_description").and_then(|v| v.as_str()).unwrap_or("").to_string();
                         let error_url = format!("{}?error={}&error_description={}", default_error_url, error, urlencoding::encode(&error_desc));
-                        return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), error_url)], redirect: None };
+                        return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), error_url)]), redirect: None };
                     }
 
                     // Verify state and get stored data
@@ -478,14 +478,14 @@ impl BetterAuthPlugin for GenericOAuthPlugin {
                         }
                         _ => {
                             let error_url = format!("{}?error=invalid_state", default_error_url);
-                            return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), error_url)], redirect: None };
+                            return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), error_url)]), redirect: None };
                         }
                     };
                     let callback_url = state_data.get("callbackURL").and_then(|v| v.as_str()).unwrap_or("/").to_string();
                     let link_data = state_data.get("link").cloned();
 
                     // Exchange authorization code for tokens
-                    let redirect_uri = format!("{}/callback/oauth2/{}", ctx.base_url, provider.id);
+                    let redirect_uri = format!("{}/callback/oauth2/{}", ctx.base_url.as_deref().unwrap_or(""), provider.id);
                     let token_body = serde_json::json!({
                         "grant_type": "authorization_code",
                         "code": code,
@@ -514,19 +514,19 @@ impl BetterAuthPlugin for GenericOAuthPlugin {
                             Ok(data) => data,
                             Err(_) => {
                                 let error_url = format!("{}?error=oauth_token_exchange_failed", callback_url);
-                                return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), error_url)], redirect: None };
+                                return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), error_url)]), redirect: None };
                             }
                         },
                         Err(_) => {
                             let error_url = format!("{}?error=oauth_code_verification_failed", callback_url);
-                            return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), error_url)], redirect: None };
+                            return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), error_url)]), redirect: None };
                         }
                     };
 
                     let access_token = token_resp.get("access_token").and_then(|v| v.as_str()).unwrap_or("").to_string();
                     if access_token.is_empty() {
                         let error_url = format!("{}?error=oauth_token_missing", callback_url);
-                        return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), error_url)], redirect: None };
+                        return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), error_url)]), redirect: None };
                     }
 
                     // Fetch user info from provider
@@ -539,7 +539,7 @@ impl BetterAuthPlugin for GenericOAuthPlugin {
                         Ok(resp) => resp.json::<serde_json::Value>().await.unwrap_or_default(),
                         Err(_) => {
                             let error_url = format!("{}?error=user_info_fetch_failed", callback_url);
-                            return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), error_url)], redirect: None };
+                            return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), error_url)]), redirect: None };
                         }
                     };
 
@@ -559,7 +559,7 @@ impl BetterAuthPlugin for GenericOAuthPlugin {
 
                     if email.is_empty() {
                         let error_url = format!("{}?error=email_is_missing", callback_url);
-                        return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), error_url)], redirect: None };
+                        return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), error_url)]), redirect: None };
                     }
 
                     // Handle account linking if link context exists
@@ -567,7 +567,7 @@ impl BetterAuthPlugin for GenericOAuthPlugin {
                         let link_user_id = link.get("userId").and_then(|v| v.as_str()).unwrap_or("");
                         if link_user_id.is_empty() {
                             let error_url = format!("{}?error=link_user_id_missing", callback_url);
-                            return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), error_url)], redirect: None };
+                            return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), error_url)]), redirect: None };
                         }
                         // Create linked account record
                         let _ = ctx.adapter.create("account", serde_json::json!({
@@ -580,7 +580,7 @@ impl BetterAuthPlugin for GenericOAuthPlugin {
                             "createdAt": chrono::Utc::now().to_rfc3339(),
                             "updatedAt": chrono::Utc::now().to_rfc3339(),
                         })).await;
-                        return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), callback_url)], redirect: None };
+                        return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), callback_url)]), redirect: None };
                     }
 
                     // Check if user exists by email
@@ -611,7 +611,7 @@ impl BetterAuthPlugin for GenericOAuthPlugin {
                         // New user — check if sign up is allowed
                         if provider.disable_implicit_sign_up {
                             let error_url = format!("{}?error=signup_disabled", callback_url);
-                            return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: vec![("Location".into(), error_url)], redirect: None };
+                            return PluginHandlerResponse { status: 302, body: serde_json::json!({}), headers: HashMap::from([("Location".into(), error_url)]), redirect: None };
                         }
                         let new_user_id = uuid::Uuid::new_v4().to_string();
                         let mut user_data = serde_json::json!({
@@ -649,13 +649,13 @@ impl BetterAuthPlugin for GenericOAuthPlugin {
                     PluginHandlerResponse {
                         status: 302,
                         body: serde_json::json!({}),
-                        headers: vec![
+                        headers: HashMap::from([
                             ("Location".into(), callback_url),
                             ("Set-Cookie".into(), format!(
                                 "better-auth.session_token={}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}",
                                 session_token, 7 * 24 * 60 * 60
                             )),
-                        ],
+                        ]),
                         redirect: None,
                     }
                 })
@@ -708,7 +708,7 @@ impl BetterAuthPlugin for GenericOAuthPlugin {
                     let redirect_uri = if let Some(ref custom) = provider.redirect_uri {
                         custom.clone()
                     } else {
-                        format!("{}/callback/oauth2/{}", ctx.base_url, provider.id)
+                        format!("{}/callback/oauth2/{}", ctx.base_url.as_deref().unwrap_or(""), provider.id)
                     };
 
                     let additional_scopes: Vec<String> = req.body.get("scopes")

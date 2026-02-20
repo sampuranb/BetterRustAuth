@@ -57,7 +57,7 @@ impl PhoneNumberErrorCodes {
     pub const PHONE_NUMBER_NOT_VERIFIED: &str = "Phone number not verified";
     pub const PHONE_NUMBER_CANNOT_BE_UPDATED: &str = "Phone number cannot be updated";
     pub const INVALID_PHONE_NUMBER_OR_PASSWORD: &str = "Invalid phone number or password";
-    pub const SEND_OTP_NOT_IMPLEMENTED: &str = "sendOTP not implemented";
+    pub const SEND_OTP_NOT_IMPLEMENTED: &str = "sendOTP is not configured";
     pub const USER_NOT_FOUND: &str = "User not found";
     pub const UNEXPECTED_ERROR: &str = "Unexpected error";
     pub const SIGN_UP_DISABLED: &str = "Sign up is disabled";
@@ -405,22 +405,26 @@ impl BetterAuthPlugin for PhoneNumberPlugin {
                     Ok(b) => b,
                     Err(e) => return PluginHandlerResponse::error(400, "BAD_REQUEST", &format!("{}", e)),
                 };
+                // Check that the send callback is configured BEFORE generating/storing OTP
+                let send_fn = match opts.send_otp {
+                    Some(ref f) => f,
+                    None => {
+                        tracing::warn!("{}", PhoneNumberErrorCodes::SEND_OTP_NOT_IMPLEMENTED);
+                        return PluginHandlerResponse::error(501, "NOT_IMPLEMENTED", PhoneNumberErrorCodes::SEND_OTP_NOT_IMPLEMENTED);
+                    }
+                };
+
                 let otp = generate_phone_otp(opts.otp_length);
                 let expires = chrono::Utc::now() + chrono::Duration::seconds(opts.expires_in as i64);
                 let _ = ctx.adapter.create_verification(&body.phone_number, &otp, expires).await;
 
-                // Invoke the send callback if configured
-                if let Some(ref send_fn) = opts.send_otp {
-                    let data = SendPhoneOtpData {
-                        phone_number: body.phone_number.clone(),
-                        code: otp.clone(),
-                    };
-                    if let Err(e) = send_fn(data).await {
-                        tracing::error!("Failed to send phone OTP: {}", e);
-                        return PluginHandlerResponse::error(500, "SEND_FAILED", &e);
-                    }
-                } else {
-                    tracing::warn!("{}", PhoneNumberErrorCodes::SEND_OTP_NOT_IMPLEMENTED);
+                let data = SendPhoneOtpData {
+                    phone_number: body.phone_number.clone(),
+                    code: otp.clone(),
+                };
+                if let Err(e) = send_fn(data).await {
+                    tracing::error!("Failed to send phone OTP: {}", e);
+                    return PluginHandlerResponse::error(500, "SEND_FAILED", &e);
                 }
 
                 PluginHandlerResponse::ok(serde_json::json!({"status": true}))

@@ -201,7 +201,7 @@ impl BetterAuthPlugin for OrganizationPlugin {
             PluginEndpoint::with_handler("/organization/invite-member", HttpMethod::Post, true,
                 invite_member_handler(opts.clone())),
             PluginEndpoint::with_handler("/organization/accept-invitation", HttpMethod::Post, true,
-                accept_invitation_handler()),
+                accept_invitation_handler(opts.clone())),
             PluginEndpoint::with_handler("/organization/reject-invitation", HttpMethod::Post, true,
                 reject_invitation_handler()),
             PluginEndpoint::with_handler("/organization/cancel-invitation", HttpMethod::Post, true,
@@ -307,7 +307,7 @@ mod tests {
     fn test_base_endpoints() {
         let plugin = OrganizationPlugin::default();
         let endpoints = plugin.endpoints();
-        assert_eq!(endpoints.len(), 19); // 19 base endpoints (added check-slug)
+        assert_eq!(endpoints.len(), 23); // 23 base endpoints
     }
 
     #[test]
@@ -317,7 +317,7 @@ mod tests {
             ..Default::default()
         });
         let endpoints = plugin.endpoints();
-        assert_eq!(endpoints.len(), 25); // 19 base + 6 team
+        assert_eq!(endpoints.len(), 33); // 23 base + 10 team
     }
 
     #[test]
@@ -327,7 +327,7 @@ mod tests {
             ..Default::default()
         });
         let endpoints = plugin.endpoints();
-        assert_eq!(endpoints.len(), 26); // 19 base + 7 access (has-permission, check-permission, get-permissions, create/delete/update/list/get-role)
+        assert_eq!(endpoints.len(), 30); // 23 base + 7 access
     }
 
     #[test]
@@ -338,7 +338,7 @@ mod tests {
             ..Default::default()
         });
         let endpoints = plugin.endpoints();
-        assert_eq!(endpoints.len(), 32); // 19 + 6 + 7
+        assert_eq!(endpoints.len(), 40); // 23 + 10 + 7
     }
 
     #[test]

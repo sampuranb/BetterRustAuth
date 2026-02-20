@@ -26,7 +26,7 @@ impl Default for RateLimitConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            window: 60,
+            window: 10,
             max: 100,
             custom_rules: HashMap::new(),
         }
@@ -196,7 +196,7 @@ mod tests {
     fn test_rate_limiter_allows_within_limit() {
         let config = RateLimitConfig {
             enabled: true,
-            window: 60,
+            window: 10,
             max: 5,
             ..Default::default()
         };
@@ -211,7 +211,7 @@ mod tests {
     fn test_rate_limiter_blocks_over_limit() {
         let config = RateLimitConfig {
             enabled: true,
-            window: 60,
+            window: 10,
             max: 3,
             ..Default::default()
         };
@@ -237,7 +237,7 @@ mod tests {
     fn test_rate_limiter_different_ips() {
         let config = RateLimitConfig {
             enabled: true,
-            window: 60,
+            window: 10,
             max: 1,
             ..Default::default()
         };
@@ -266,7 +266,7 @@ mod tests {
     fn test_special_rules_for_auth_endpoints() {
         let config = RateLimitConfig {
             enabled: true,
-            window: 60,
+            window: 10,
             max: 100,
             ..Default::default()
         };
@@ -289,7 +289,7 @@ mod tests {
 
         let config = RateLimitConfig {
             enabled: true,
-            window: 60,
+            window: 10,
             max: 100,
             custom_rules,
         };

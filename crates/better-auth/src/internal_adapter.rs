@@ -497,7 +497,13 @@ impl ConcreteInternalAdapter {
 impl InternalAdapter for ConcreteInternalAdapter {
     // ─── User Operations ─────────────────────────────────────────
 
-    async fn create_user(&self, data: Value) -> Result<Value, AdapterError> {
+    async fn create_user(&self, mut data: Value) -> Result<Value, AdapterError> {
+        // Lowercase email before creating user
+        if let Some(obj) = data.as_object_mut() {
+            if let Some(email) = obj.get("email").and_then(|e| e.as_str()).map(|e| e.to_lowercase()) {
+                obj.insert("email".to_string(), Value::String(email));
+            }
+        }
         self.adapter
             .create("user", data, None)
             .await
@@ -512,8 +518,9 @@ impl InternalAdapter for ConcreteInternalAdapter {
     }
 
     async fn find_user_by_email(&self, email: &str) -> Result<Option<Value>, AdapterError> {
+        let email_lower = email.to_lowercase();
         self.adapter
-            .find_one("user", &[WhereClause::eq("email", email)])
+            .find_one("user", &[WhereClause::eq("email", email_lower.as_str())])
             .await
             .map_err(Into::into)
     }
@@ -533,8 +540,9 @@ impl InternalAdapter for ConcreteInternalAdapter {
     }
 
     async fn update_user_by_email(&self, email: &str, data: Value) -> Result<Value, AdapterError> {
+        let email_lower = email.to_lowercase();
         self.adapter
-            .update("user", &[WhereClause::eq("email", email)], data)
+            .update("user", &[WhereClause::eq("email", email_lower.as_str())], data)
             .await?
             .ok_or(AdapterError::NotFound)
     }
@@ -993,10 +1001,11 @@ impl InternalAdapter for ConcreteInternalAdapter {
         account_id: &str,
         provider_id: &str,
     ) -> Result<Option<OAuthUserResult>, AdapterError> {
+        let email_lower = email.to_lowercase();
         // Find the user by email
         let user = match self
             .adapter
-            .find_one("user", &[WhereClause::eq("email", email)])
+            .find_one("user", &[WhereClause::eq("email", email_lower.as_str())])
             .await?
         {
             Some(u) => u,
