@@ -39,6 +39,25 @@ pub type EmailCallback = Arc<
         + Sync,
 >;
 
+/// Lifecycle callback — receives a user JSON value.
+///
+/// Used for `beforeEmailVerification`, `afterEmailVerification`,
+/// `onPasswordReset`, `beforeDelete`, `afterDelete`, etc.
+pub type LifecycleCallback = Arc<
+    dyn Fn(&serde_json::Value) -> Pin<Box<dyn Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send>>
+        + Send
+        + Sync,
+>;
+
+/// Error handler callback — receives the error as a string.
+///
+/// Maps to TS `onAPIError.onError`.
+pub type ErrorHandlerCallback = Arc<
+    dyn Fn(&str) -> Pin<Box<dyn Future<Output = ()> + Send>>
+        + Send
+        + Sync,
+>;
+
 /// Top-level configuration for Better Auth.
 ///
 /// Mirrors the TypeScript `BetterAuthOptions` interface exactly.
@@ -117,6 +136,42 @@ pub struct BetterAuthOptions {
     /// instead of (or in addition to) the primary database.
     #[serde(skip)]
     pub secondary_storage: Option<Arc<dyn SecondaryStorage>>,
+
+    /// Verification table configuration.
+    ///
+    /// Maps to TS `verification` option.
+    #[serde(default)]
+    pub verification: VerificationOptions,
+
+    /// Request lifecycle hooks.
+    ///
+    /// Maps to TS `hooks` option with `before`/`after` middleware.
+    #[serde(skip)]
+    pub hooks: HooksOptions,
+
+    /// Database lifecycle hooks.
+    ///
+    /// Maps to TS `databaseHooks` option.
+    #[serde(skip)]
+    pub database_hooks: DatabaseHooksOptions,
+
+    /// Logger configuration.
+    ///
+    /// Maps to TS `logger` option.
+    #[serde(default)]
+    pub logger_config: LoggerOptions,
+
+    /// Telemetry configuration.
+    ///
+    /// Maps to TS `telemetry` option.
+    #[serde(default)]
+    pub telemetry: TelemetryOptions,
+
+    /// Experimental features.
+    ///
+    /// Maps to TS `experimental` option.
+    #[serde(default)]
+    pub experimental: ExperimentalOptions,
 }
 
 fn default_base_path() -> String {
@@ -142,6 +197,12 @@ impl Default for BetterAuthOptions {
             plugins: Vec::new(),
             on_api_error: None,
             oauth: OAuthOptions::default(),
+            verification: VerificationOptions::default(),
+            hooks: HooksOptions::default(),
+            database_hooks: DatabaseHooksOptions::default(),
+            logger_config: LoggerOptions::default(),
+            telemetry: TelemetryOptions::default(),
+            experimental: ExperimentalOptions::default(),
             secondary_storage: None,
         }
     }
@@ -232,6 +293,12 @@ pub struct EmailAndPasswordOptions {
     /// Maps to TS `emailAndPassword.sendResetPassword`.
     #[serde(skip)]
     pub send_reset_password: Option<EmailCallback>,
+
+    /// Callback triggered after a user's password is successfully reset.
+    ///
+    /// Maps to TS `emailAndPassword.onPasswordReset`.
+    #[serde(skip)]
+    pub on_password_reset: Option<LifecycleCallback>,
 }
 
 fn default_min_password_length() -> usize { 8 }
@@ -251,6 +318,7 @@ impl fmt::Debug for EmailAndPasswordOptions {
             .field("revoke_sessions_on_password_reset", &self.revoke_sessions_on_password_reset)
             .field("reset_password_token_expires_in", &self.reset_password_token_expires_in)
             .field("send_reset_password", &self.send_reset_password.as_ref().map(|_| "<callback>"))
+            .field("on_password_reset", &self.on_password_reset.as_ref().map(|_| "<callback>"))
             .finish()
     }
 }
@@ -267,6 +335,7 @@ impl Default for EmailAndPasswordOptions {
             revoke_sessions_on_password_reset: false,
             reset_password_token_expires_in: default_reset_password_token_expires_in(),
             send_reset_password: None,
+            on_password_reset: None,
         }
     }
 }
@@ -504,6 +573,22 @@ pub struct AccountLinkingOptions {
     /// Allow linking accounts with different emails.
     #[serde(default)]
     pub allow_different_emails: bool,
+
+    /// Allow unlinking all accounts (even the last one).
+    ///
+    /// Maps to TS `account.accountLinking.allowUnlinkingAll`.
+    ///
+    /// @default false
+    #[serde(default)]
+    pub allow_unlinking_all: bool,
+
+    /// Update user info (name, image) when a new account is linked.
+    ///
+    /// Maps to TS `account.accountLinking.updateUserInfoOnLink`.
+    ///
+    /// @default false
+    #[serde(default)]
+    pub update_user_info_on_link: bool,
 }
 
 impl Default for AccountLinkingOptions {
@@ -513,6 +598,8 @@ impl Default for AccountLinkingOptions {
             trusted_providers: Vec::new(),
             disable_implicit_linking: false,
             allow_different_emails: false,
+            allow_unlinking_all: false,
+            update_user_info_on_link: false,
         }
     }
 }
@@ -549,6 +636,18 @@ pub struct EmailVerificationOptions {
     /// Maps to TS `emailVerification.sendVerificationEmail`.
     #[serde(skip)]
     pub send_verification_email: Option<EmailCallback>,
+
+    /// Called before a user verifies their email.
+    ///
+    /// Maps to TS `emailVerification.beforeEmailVerification`.
+    #[serde(skip)]
+    pub before_email_verification: Option<LifecycleCallback>,
+
+    /// Called after a user's email is verified.
+    ///
+    /// Maps to TS `emailVerification.afterEmailVerification`.
+    #[serde(skip)]
+    pub after_email_verification: Option<LifecycleCallback>,
 }
 
 impl fmt::Debug for EmailVerificationOptions {
@@ -559,6 +658,8 @@ impl fmt::Debug for EmailVerificationOptions {
             .field("auto_sign_in_after_verification", &self.auto_sign_in_after_verification)
             .field("expires_in", &self.expires_in)
             .field("send_verification_email", &self.send_verification_email.as_ref().map(|_| "<callback>"))
+            .field("before_email_verification", &self.before_email_verification.as_ref().map(|_| "<callback>"))
+            .field("after_email_verification", &self.after_email_verification.as_ref().map(|_| "<callback>"))
             .finish()
     }
 }
@@ -571,6 +672,8 @@ impl Default for EmailVerificationOptions {
             auto_sign_in_after_verification: false,
             expires_in: default_verification_expiry(),
             send_verification_email: None,
+            before_email_verification: None,
+            after_email_verification: None,
         }
     }
 }
@@ -639,7 +742,30 @@ pub struct DeleteUserOptions {
     /// Maps to TS `user.deleteUser.sendDeleteAccountVerification`.
     #[serde(skip)]
     pub send_delete_account_verification: Option<EmailCallback>,
+
+    /// Called before a user is deleted.
+    /// To interrupt, return an error.
+    ///
+    /// Maps to TS `user.deleteUser.beforeDelete`.
+    #[serde(skip)]
+    pub before_delete: Option<LifecycleCallback>,
+
+    /// Called after a user is deleted. Useful for cleanup.
+    ///
+    /// Maps to TS `user.deleteUser.afterDelete`.
+    #[serde(skip)]
+    pub after_delete: Option<LifecycleCallback>,
+
+    /// Expiration time for the delete verification token in seconds.
+    ///
+    /// Maps to TS `user.deleteUser.deleteTokenExpiresIn`.
+    ///
+    /// @default 86400 (1 day)
+    #[serde(default = "default_delete_token_expires_in")]
+    pub delete_token_expires_in: u64,
 }
+
+fn default_delete_token_expires_in() -> u64 { 86400 }
 
 impl fmt::Debug for DeleteUserOptions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -647,6 +773,9 @@ impl fmt::Debug for DeleteUserOptions {
             .field("enabled", &self.enabled)
             .field("require_password", &self.require_password)
             .field("send_delete_account_verification", &self.send_delete_account_verification.as_ref().map(|_| "<callback>"))
+            .field("before_delete", &self.before_delete.as_ref().map(|_| "<callback>"))
+            .field("after_delete", &self.after_delete.as_ref().map(|_| "<callback>"))
+            .field("delete_token_expires_in", &self.delete_token_expires_in)
             .finish()
     }
 }
@@ -657,6 +786,9 @@ impl Default for DeleteUserOptions {
             enabled: false,
             require_password: false,
             send_delete_account_verification: None,
+            before_delete: None,
+            after_delete: None,
+            delete_token_expires_in: default_delete_token_expires_in(),
         }
     }
 }
@@ -674,6 +806,14 @@ pub struct ChangeEmailOptions {
     /// Maps to TS `user.changeEmail.sendChangeEmailConfirmation`.
     #[serde(skip)]
     pub send_change_email_confirmation: Option<EmailCallback>,
+
+    /// Update the email without verification if the user is not verified.
+    ///
+    /// Maps to TS `user.changeEmail.updateEmailWithoutVerification`.
+    ///
+    /// @default false
+    #[serde(default)]
+    pub update_email_without_verification: bool,
 }
 
 impl fmt::Debug for ChangeEmailOptions {
@@ -681,6 +821,7 @@ impl fmt::Debug for ChangeEmailOptions {
         f.debug_struct("ChangeEmailOptions")
             .field("enabled", &self.enabled)
             .field("send_change_email_confirmation", &self.send_change_email_confirmation.as_ref().map(|_| "<callback>"))
+            .field("update_email_without_verification", &self.update_email_without_verification)
             .finish()
     }
 }
@@ -690,6 +831,7 @@ impl Default for ChangeEmailOptions {
         Self {
             enabled: false,
             send_change_email_confirmation: None,
+            update_email_without_verification: false,
         }
     }
 }
@@ -778,6 +920,18 @@ pub struct AdvancedOptions {
     /// @default "plain"
     #[serde(default)]
     pub store_identifier: StoreIdentifierOption,
+
+    /// IP address configuration for rate limiting and session tracking.
+    ///
+    /// Maps to TS `advanced.ipAddress`.
+    #[serde(default)]
+    pub ip_address: IpAddressOptions,
+
+    /// Database configuration (findMany limits, ID generation strategy).
+    ///
+    /// Maps to TS `advanced.database`.
+    #[serde(default)]
+    pub database: AdvancedDatabaseOptions,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -851,12 +1005,69 @@ pub enum StoreStateStrategy {
 
 // ─── Error Handling Options ──────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OnApiErrorOptions {
     /// Custom error page URL (default: "{baseURL}/error").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_url: Option<String>,
+
+    /// Throw errors instead of returning error responses.
+    ///
+    /// Maps to TS `onAPIError.throw`.
+    ///
+    /// @default false
+    #[serde(default)]
+    pub throw: bool,
+
+    /// Custom error handler callback.
+    ///
+    /// Maps to TS `onAPIError.onError`.
+    #[serde(skip)]
+    pub on_error: Option<ErrorHandlerCallback>,
+
+    /// Customize the default error page styling.
+    ///
+    /// Maps to TS `onAPIError.customizeDefaultErrorPage`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub customize_default_error_page: Option<ErrorPageCustomization>,
+}
+
+impl fmt::Debug for OnApiErrorOptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OnApiErrorOptions")
+            .field("error_url", &self.error_url)
+            .field("throw", &self.throw)
+            .field("on_error", &self.on_error.as_ref().map(|_| "<callback>"))
+            .field("customize_default_error_page", &self.customize_default_error_page)
+            .finish()
+    }
+}
+
+/// Customization options for the default error page.
+///
+/// Maps to TS `onAPIError.customizeDefaultErrorPage`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ErrorPageCustomization {
+    /// Custom color overrides.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub colors: Option<HashMap<String, String>>,
+    /// Custom size overrides.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<HashMap<String, String>>,
+    /// Custom font overrides.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font: Option<HashMap<String, String>>,
+    /// Disable the title border decoration.
+    #[serde(default)]
+    pub disable_title_border: bool,
+    /// Disable corner decorations.
+    #[serde(default)]
+    pub disable_corner_decorations: bool,
+    /// Disable the background grid.
+    #[serde(default)]
+    pub disable_background_grid: bool,
 }
 
 // ─── Store Identifier Option ─────────────────────────────────────
@@ -878,4 +1089,233 @@ pub enum StoreIdentifierOption {
     Plain,
     /// Hash identifiers with SHA-256 before storing.
     Hashed,
+}
+
+// ─── IP Address Options ──────────────────────────────────────────
+
+/// IP address configuration for rate limiting and session tracking.
+///
+/// Maps to TS `advanced.ipAddress`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IpAddressOptions {
+    /// Custom headers to check for IP address.
+    ///
+    /// @example ["x-client-ip", "x-forwarded-for", "cf-connecting-ip"]
+    #[serde(default)]
+    pub ip_address_headers: Vec<String>,
+
+    /// Disable IP tracking entirely.
+    ///
+    /// ⚠️ Security risk — may expose your application to abuse.
+    ///
+    /// @default false
+    #[serde(default)]
+    pub disable_ip_tracking: bool,
+
+    /// IPv6 subnet prefix length for rate limiting.
+    /// IPv6 addresses will be normalized to this subnet.
+    ///
+    /// @default 64
+    #[serde(default = "default_ipv6_subnet")]
+    pub ipv6_subnet: u8,
+}
+
+fn default_ipv6_subnet() -> u8 { 64 }
+
+// ─── Advanced Database Options ───────────────────────────────────
+
+/// Database configuration within advanced options.
+///
+/// Maps to TS `advanced.database`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdvancedDatabaseOptions {
+    /// Default number of records to return from findMany.
+    ///
+    /// @default 100
+    #[serde(default = "default_find_many_limit")]
+    pub default_find_many_limit: usize,
+
+    /// ID generation strategy.
+    ///
+    /// - `"random"` — generate random IDs (default)
+    /// - `"uuid"` — generate UUIDs
+    /// - `"serial"` — use database auto-increment
+    ///
+    /// Maps to TS `advanced.database.generateId`.
+    #[serde(default)]
+    pub generate_id: GenerateIdStrategy,
+}
+
+fn default_find_many_limit() -> usize { 100 }
+
+impl Default for AdvancedDatabaseOptions {
+    fn default() -> Self {
+        Self {
+            default_find_many_limit: default_find_many_limit(),
+            generate_id: GenerateIdStrategy::default(),
+        }
+    }
+}
+
+/// ID generation strategy.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GenerateIdStrategy {
+    /// Generate random IDs (default).
+    #[default]
+    Random,
+    /// Generate UUIDs.
+    Uuid,
+    /// Use database auto-increment.
+    Serial,
+}
+
+// ─── Verification Options ────────────────────────────────────────
+
+/// Verification table configuration.
+///
+/// Maps to TS `verification` top-level option.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerificationOptions {
+    /// Disable cleanup of expired verification records on fetch.
+    ///
+    /// @default false
+    #[serde(default)]
+    pub disable_cleanup: bool,
+
+    /// Store verification data in the database even when secondary storage is configured.
+    ///
+    /// @default false
+    #[serde(default)]
+    pub store_in_database: bool,
+}
+
+// ─── Hooks Options ───────────────────────────────────────────────
+
+/// Request lifecycle hooks.
+///
+/// Maps to TS `hooks` option with `before`/`after` middleware.
+///
+/// In TS, these are `AuthMiddleware` functions. In Rust, we represent
+/// them as optional async callbacks.
+#[derive(Default)]
+pub struct HooksOptions {
+    /// Called before each request is processed.
+    pub before: Option<LifecycleCallback>,
+    /// Called after each request is processed.
+    pub after: Option<LifecycleCallback>,
+}
+
+impl fmt::Debug for HooksOptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HooksOptions")
+            .field("before", &self.before.as_ref().map(|_| "<callback>"))
+            .field("after", &self.after.as_ref().map(|_| "<callback>"))
+            .finish()
+    }
+}
+
+// ─── Database Hooks Options ──────────────────────────────────────
+
+/// Database lifecycle hooks for model operations.
+///
+/// Maps to TS `databaseHooks` option.
+#[derive(Default)]
+pub struct DatabaseHooksOptions {
+    /// Hooks for the `user` model.
+    pub user: Option<ModelHooks>,
+    /// Hooks for the `session` model.
+    pub session: Option<ModelHooks>,
+    /// Hooks for the `account` model.
+    pub account: Option<ModelHooks>,
+    /// Hooks for the `verification` model.
+    pub verification: Option<ModelHooks>,
+}
+
+impl fmt::Debug for DatabaseHooksOptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DatabaseHooksOptions")
+            .field("user", &self.user.as_ref().map(|_| "<hooks>"))
+            .field("session", &self.session.as_ref().map(|_| "<hooks>"))
+            .field("account", &self.account.as_ref().map(|_| "<hooks>"))
+            .field("verification", &self.verification.as_ref().map(|_| "<hooks>"))
+            .finish()
+    }
+}
+
+/// Hooks for a specific database model (before/after create, update).
+pub struct ModelHooks {
+    pub before_create: Option<LifecycleCallback>,
+    pub after_create: Option<LifecycleCallback>,
+    pub before_update: Option<LifecycleCallback>,
+    pub after_update: Option<LifecycleCallback>,
+}
+
+impl fmt::Debug for ModelHooks {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ModelHooks").finish()
+    }
+}
+
+// ─── Logger Options ──────────────────────────────────────────────
+
+/// Logger configuration.
+///
+/// Maps to TS `logger` option.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoggerOptions {
+    /// Disable logging entirely.
+    ///
+    /// @default false
+    #[serde(default)]
+    pub disabled: bool,
+
+    /// Log level: "error", "warn", "info", "debug".
+    ///
+    /// @default "error"
+    #[serde(default = "default_log_level")]
+    pub level: String,
+}
+
+fn default_log_level() -> String { "error".to_string() }
+
+// ─── Telemetry Options ───────────────────────────────────────────
+
+/// Telemetry configuration.
+///
+/// Maps to TS `telemetry` option.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TelemetryOptions {
+    /// Enable telemetry collection.
+    ///
+    /// @default false
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Enable debug mode for telemetry.
+    ///
+    /// @default false
+    #[serde(default)]
+    pub debug: bool,
+}
+
+// ─── Experimental Options ────────────────────────────────────────
+
+/// Experimental features.
+///
+/// Maps to TS `experimental` option.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExperimentalOptions {
+    /// Enable experimental joins for database adapters.
+    /// Not all adapters support joins.
+    ///
+    /// @default false
+    #[serde(default)]
+    pub joins: bool,
 }

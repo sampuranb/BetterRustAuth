@@ -420,9 +420,11 @@ pub async fn handle_change_email(
         .map(|e| e.send_on_sign_up)
         .unwrap_or(false);
 
-    if require_verification {
-        // TODO: Send verification email to new address
-        // For now, store a verification token
+    // Check if we can update without verification (TS: updateEmailWithoutVerification)
+    let update_without_verification = ctx.options.user.change_email.update_email_without_verification;
+
+    if require_verification && !update_without_verification {
+        // Store a verification token
         let token = crate::crypto::random::generate_random_string(32);
         let expires_at = chrono::Utc::now() + chrono::TimeDelta::hours(24);
 
@@ -435,6 +437,23 @@ pub async fn handle_change_email(
         ctx.adapter
             .create_verification(&token, &data.to_string(), expires_at)
             .await?;
+
+        // Invoke the sendChangeEmailConfirmation callback if configured
+        if let Some(ref callback) = ctx.options.user.change_email.send_change_email_confirmation {
+            let user = ctx.adapter.find_user_by_id(user_id).await?
+                .ok_or_else(|| UpdateUserError::Database(AdapterError::NotFound))?;
+
+            let base_url = ctx.base_url.as_deref().unwrap_or("http://localhost:3000");
+            let verify_url = format!("{}{}/verify-email?token={}", base_url, ctx.base_path, token);
+
+            let cb_data = better_auth_core::options::EmailCallbackData {
+                user,
+                url: verify_url,
+                token: token.clone(),
+            };
+
+            let _ = callback(&cb_data).await;
+        }
 
         return Ok(ChangeEmailResponse {
             status: true,
