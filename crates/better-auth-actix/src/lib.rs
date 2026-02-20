@@ -390,6 +390,11 @@ async fn handle_plugin_dispatch(
     use better_auth_core::plugin::{HttpMethod, PluginHandlerRequest};
     use better_auth::plugin_runtime::endpoint_router;
 
+    // Run origin check + rate limiting on plugin endpoints too
+    if let Err(resp) = run_middleware_checks(ctx.get_ref(), &req) {
+        return resp;
+    }
+
     // Convert Actix method to our HttpMethod
     let plugin_method = match req.method().as_str() {
         "GET" => HttpMethod::Get,
@@ -788,18 +793,40 @@ async fn handle_get_session(
         None => return Ok(HttpResponse::Ok().json(serde_json::Value::Null)),
     };
 
+    let is_post = req.method() == actix_web::http::Method::POST;
     let cookie_hdr = req.headers().get("cookie").and_then(|v| v.to_str().ok());
     let result = routes::session::handle_get_session(
         ctx.get_ref().clone(),
         &token,
-        GetSessionOptions::default(),
+        GetSessionOptions { is_post, ..GetSessionOptions::default() },
         cookie_hdr,
     )
     .await?;
 
+    let mut builder = HttpResponse::Ok();
+
+    // Apply cookie actions from GetSessionResult
+    let cookie_prefix = ctx.options.advanced.cookie_prefix.as_deref().unwrap_or("better-auth");
+    if let Some(ref action) = result.set_session_cookie {
+        let cookie_name = format!("{}.session_token", cookie_prefix);
+        let cookie_val = format!(
+            "{}={}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}",
+            cookie_name, action.token, action.max_age_secs
+        );
+        builder.insert_header(("set-cookie", cookie_val));
+    }
+    if result.delete_session_cookie {
+        let cookie_name = format!("{}.session_token", cookie_prefix);
+        let cookie_val = format!(
+            "{}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
+            cookie_name
+        );
+        builder.insert_header(("set-cookie", cookie_val));
+    }
+
     match result.response {
-        Some(session) => Ok(HttpResponse::Ok().json(session)),
-        None => Ok(HttpResponse::Ok().json(serde_json::Value::Null)),
+        Some(session) => Ok(builder.json(session)),
+        None => Ok(builder.json(serde_json::Value::Null)),
     }
 }
 

@@ -2,10 +2,13 @@
 //
 // Maps to: packages/better-auth/src/plugins/siwe/index.ts
 //
-// Endpoints:
+// Endpoints (Rust-native paths):
 //   POST /siwe/generate-nonce   — generate a random nonce for signing
 //   POST /siwe/verify           — verify the signed message and create session
 //   POST /siwe/get-nonce        — retrieve the stored nonce
+//
+// Endpoints (TS SDK-compatible):
+//   POST /siwe/nonce            — alias for /siwe/generate-nonce (TS client path)
 //
 // Features:
 //   - EIP-4361 message format generation
@@ -466,10 +469,23 @@ impl BetterAuthPlugin for SiwePlugin {
             })
         });
 
+        // POST /siwe/nonce — TS alias for /siwe/generate-nonce (TS: index.ts:52)
+        let ts_nonce_handler: PluginHandlerFn = Arc::new(move |_ctx_any, req: PluginHandlerRequest| {
+            Box::pin(async move {
+                // TS body: { walletAddress, chainId } — we generate and return the nonce
+                let wallet_address = req.body.get("walletAddress").and_then(|v| v.as_str()).unwrap_or("");
+                let chain_id = req.body.get("chainId").and_then(|v| v.as_u64()).unwrap_or(1);
+                let _ = (wallet_address, chain_id); // future: store nonce keyed by address+chainId
+                let nonce = generate_nonce();
+                PluginHandlerResponse::ok(serde_json::json!({"nonce": nonce}))
+            })
+        });
+
         vec![
             PluginEndpoint::with_handler("/siwe/generate-nonce", HttpMethod::Post, false, gen_nonce_handler),
             PluginEndpoint::with_handler("/siwe/verify", HttpMethod::Post, false, verify_handler),
             PluginEndpoint::with_handler("/siwe/get-nonce", HttpMethod::Post, false, get_nonce_handler),
+            PluginEndpoint::with_handler("/siwe/nonce", HttpMethod::Post, false, ts_nonce_handler),
         ]
     }
 
@@ -567,9 +583,10 @@ mod tests {
     fn test_plugin_endpoints() {
         let plugin = SiwePlugin::default();
         let endpoints = plugin.endpoints();
-        assert_eq!(endpoints.len(), 3);
+        assert_eq!(endpoints.len(), 4); // generate-nonce + verify + get-nonce + nonce (TS alias)
         assert_eq!(endpoints[0].path, "/siwe/generate-nonce");
         assert_eq!(endpoints[1].path, "/siwe/verify");
+        assert_eq!(endpoints[3].path, "/siwe/nonce");
     }
 
     #[test]

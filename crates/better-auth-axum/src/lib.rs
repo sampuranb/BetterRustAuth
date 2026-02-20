@@ -436,6 +436,7 @@ async fn require_session(
 
 async fn handle_get_session(
     State(ctx): State<Arc<AuthContext>>,
+    method: axum::http::Method,
     headers: axum::http::HeaderMap,
 ) -> Result<impl IntoResponse, ApiError> {
     let token = match extract_session_token_ctx(&headers, &ctx) {
@@ -443,12 +444,45 @@ async fn handle_get_session(
         None => return Ok(Json(serde_json::json!(null)).into_response()),
     };
 
+    let is_post = method == axum::http::Method::POST;
     let cookie_hdr = headers.get("cookie").and_then(|v| v.to_str().ok());
-    let result = routes::session::handle_get_session(ctx, &token, GetSessionOptions::default(), cookie_hdr).await?;
-    match result.response {
-        Some(session) => Ok(Json(session).into_response()),
-        None => Ok(Json(serde_json::json!(null)).into_response()),
+    let result = routes::session::handle_get_session(
+        ctx.clone(),
+        &token,
+        GetSessionOptions { is_post, ..GetSessionOptions::default() },
+        cookie_hdr,
+    ).await?;
+
+    let json_body = match result.response {
+        Some(ref session) => serde_json::to_value(session).unwrap_or(serde_json::Value::Null),
+        None => serde_json::Value::Null,
+    };
+    let mut resp = Json(json_body).into_response();
+
+    // Apply cookie actions from GetSessionResult
+    let cookie_prefix = ctx.options.advanced.cookie_prefix.as_deref().unwrap_or("better-auth");
+    if let Some(ref action) = result.set_session_cookie {
+        let cookie_name = format!("{}.session_token", cookie_prefix);
+        let cookie_val = format!(
+            "{}={}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}",
+            cookie_name, action.token, action.max_age_secs
+        );
+        if let Ok(hv) = axum::http::HeaderValue::from_str(&cookie_val) {
+            resp.headers_mut().append(axum::http::header::SET_COOKIE, hv);
+        }
     }
+    if result.delete_session_cookie {
+        let cookie_name = format!("{}.session_token", cookie_prefix);
+        let cookie_val = format!(
+            "{}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
+            cookie_name
+        );
+        if let Ok(hv) = axum::http::HeaderValue::from_str(&cookie_val) {
+            resp.headers_mut().append(axum::http::header::SET_COOKIE, hv);
+        }
+    }
+
+    Ok(resp)
 }
 
 async fn handle_callback(

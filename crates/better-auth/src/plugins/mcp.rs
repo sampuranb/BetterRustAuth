@@ -1062,6 +1062,34 @@ impl BetterAuthPlugin for McpPlugin {
             })
         });
 
+        // GET /mcp/get-session — TS getMcpSession (index.ts:931)
+        // Returns access token data for a Bearer token, used by withMcpAuth helper
+        let get_session_handler: PluginHandlerFn = Arc::new(move |ctx_any, req: PluginHandlerRequest| {
+            Box::pin(async move {
+                let ctx = ctx_any.downcast::<crate::context::AuthContext>().expect("Expected AuthContext");
+                let auth_header = req.headers.get("authorization")
+                    .or_else(|| req.headers.get("Authorization"))
+                    .cloned()
+                    .unwrap_or_default();
+                let access_token = if auth_header.starts_with("Bearer ") {
+                    &auth_header[7..]
+                } else {
+                    return PluginHandlerResponse {
+                        status: 200,
+                        body: serde_json::Value::Null,
+                        headers: HashMap::from([("WWW-Authenticate".into(), "Bearer".into())]),
+                        redirect: None,
+                    };
+                };
+                match ctx.adapter.find_many("oauthAccessToken", serde_json::json!({"accessToken": access_token})).await {
+                    Ok(tokens) if !tokens.is_empty() => {
+                        PluginHandlerResponse::ok(tokens[0].clone())
+                    }
+                    _ => PluginHandlerResponse::ok(serde_json::Value::Null),
+                }
+            })
+        });
+
         vec![
             PluginEndpoint::with_handler("/.well-known/oauth-authorization-server", HttpMethod::Get, false, metadata_handler),
             PluginEndpoint::with_handler("/.well-known/oauth-protected-resource", HttpMethod::Get, false, resource_handler),
@@ -1071,6 +1099,7 @@ impl BetterAuthPlugin for McpPlugin {
             PluginEndpoint::with_handler("/mcp/register", HttpMethod::Post, false, register_handler),
             PluginEndpoint::with_handler("/mcp/jwks", HttpMethod::Get, false, jwks_handler),
             PluginEndpoint::with_handler("/oauth2/consent", HttpMethod::Post, true, consent_handler),
+            PluginEndpoint::with_handler("/mcp/get-session", HttpMethod::Get, false, get_session_handler),
         ]
     }
 
@@ -1126,7 +1155,7 @@ mod tests {
     fn test_endpoints() {
         let plugin = McpPlugin::default();
         let eps = plugin.endpoints();
-        assert_eq!(eps.len(), 8);
+        assert_eq!(eps.len(), 9);
     }
 
     #[test]

@@ -514,22 +514,50 @@ async fn route_request(
         // Get session (both /session and /get-session for TS client compat)
         // TS uses method: ["GET", "POST"] — POST is used for session refresh
         ("GET" | "POST", "/session") | ("GET" | "POST", "/get-session") => {
-            let cookie_prefix = ctx.options.advanced.cookie_prefix.as_deref().unwrap_or("better-auth");
-            let token = match request.session_token_with_prefix(cookie_prefix) {
+            let cookie_prefix = ctx.options.advanced.cookie_prefix.as_deref().unwrap_or("better-auth").to_string();
+            let token = match request.session_token_with_prefix(&cookie_prefix) {
                 Some(t) => t,
                 None => return GenericResponse::json(200, &serde_json::Value::Null),
             };
+            let is_post = request.method == "POST";
             match routes::session::handle_get_session(
                 ctx,
                 &token,
-                routes::session::GetSessionOptions::default(),
+                routes::session::GetSessionOptions {
+                    is_post,
+                    ..routes::session::GetSessionOptions::default()
+                },
                 request.cookie_header(),
             )
             .await
             {
-                Ok(result) => match result.response {
-                    Some(session) => GenericResponse::json(200, &session),
-                    None => GenericResponse::json(200, &serde_json::Value::Null),
+                Ok(result) => {
+                    let mut resp = match result.response {
+                        Some(ref session) => GenericResponse::json(200, session),
+                        None => GenericResponse::json(200, &serde_json::Value::Null),
+                    };
+                    // Apply cookie actions from GetSessionResult
+                    if let Some(ref action) = result.set_session_cookie {
+                        let cookie_name = format!("{}.session_token", cookie_prefix);
+                        let cookie_val = format!(
+                            "{}={}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}",
+                            cookie_name, action.token, action.max_age_secs
+                        );
+                        resp.headers.entry("set-cookie".to_string())
+                            .or_insert_with(Vec::new)
+                            .push(cookie_val);
+                    }
+                    if result.delete_session_cookie {
+                        let cookie_name = format!("{}.session_token", cookie_prefix);
+                        let cookie_val = format!(
+                            "{}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
+                            cookie_name
+                        );
+                        resp.headers.entry("set-cookie".to_string())
+                            .or_insert_with(Vec::new)
+                            .push(cookie_val);
+                    }
+                    resp
                 },
                 Err(e) => adapter_error_to_response(e),
             }

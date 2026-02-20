@@ -1602,6 +1602,33 @@ impl BetterAuthPlugin for OidcProviderPlugin {
             })
         });
 
+        // GET /oauth2/client — TS getOAuthClient (index.ts:1461)
+        // TS path is /oauth2/client/:id — we use ?id= query since we don't have path params
+        let get_client_handler: PluginHandlerFn = Arc::new(move |ctx_any, req: PluginHandlerRequest| {
+            Box::pin(async move {
+                let ctx = ctx_any.downcast::<crate::context::AuthContext>().expect("Expected AuthContext");
+                // Require authenticated session
+                if req.session.is_none() {
+                    return PluginHandlerResponse::error(401, "UNAUTHORIZED", "Session required");
+                }
+                let client_id = req.query.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                if client_id.is_empty() {
+                    return PluginHandlerResponse::error(400, "BAD_REQUEST", "id parameter is required");
+                }
+                match ctx.adapter.find_many("oauthApplication", serde_json::json!({"clientId": client_id})).await {
+                    Ok(clients) if !clients.is_empty() => {
+                        let c = &clients[0];
+                        PluginHandlerResponse::ok(serde_json::json!({
+                            "clientId": c.get("clientId").and_then(|v| v.as_str()).unwrap_or(""),
+                            "name": c.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                            "icon": c.get("icon"),
+                        }))
+                    }
+                    _ => PluginHandlerResponse::error(404, "NOT_FOUND", "client not found"),
+                }
+            })
+        });
+
         vec![
             PluginEndpoint::with_handler("/.well-known/openid-configuration", HttpMethod::Get, false, discovery_handler),
             PluginEndpoint::with_handler("/oauth2/authorize", HttpMethod::Get, false, authorize_handler),
@@ -1613,6 +1640,7 @@ impl BetterAuthPlugin for OidcProviderPlugin {
             PluginEndpoint::with_handler("/oauth2/revoke", HttpMethod::Post, false, revoke_handler),
             PluginEndpoint::with_handler("/oauth2/endsession", HttpMethod::Get, false, end_session.clone()),
             PluginEndpoint::with_handler("/oauth2/endsession", HttpMethod::Post, false, end_session),
+            PluginEndpoint::with_handler("/oauth2/client", HttpMethod::Get, true, get_client_handler),
         ]
     }
 
@@ -1663,7 +1691,7 @@ mod tests {
     fn test_endpoints() {
         let plugin = OidcProviderPlugin::default();
         let eps = plugin.endpoints();
-        assert_eq!(eps.len(), 10);
+        assert_eq!(eps.len(), 11);
         assert_eq!(eps[0].path, "/.well-known/openid-configuration");
         assert_eq!(eps[6].path, "/oauth2/consent");
     }
