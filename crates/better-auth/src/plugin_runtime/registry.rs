@@ -113,7 +113,7 @@ impl PluginRegistry {
     /// Matches TS `runPluginInit`: calls `plugin.init()` on each registered plugin.
     pub async fn init_all(
         &self,
-        init_ctx: &better_auth_core::plugin::PluginInitContext,
+        init_ctx: &better_auth_core::plugin::PluginInitContext<'_>,
     ) -> Result<(), better_auth_core::error::BetterAuthError> {
         for plugin in &self.plugins {
             plugin.init(init_ctx).await?;

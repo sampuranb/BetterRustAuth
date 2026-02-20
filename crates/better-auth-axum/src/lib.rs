@@ -316,7 +316,7 @@ impl BetterAuth {
             .route("/sign-in/email", post(handle_sign_in))
             .route("/sign-in/social", post(handle_social_sign_in))
             .route("/sign-out", post(handle_sign_out))
-            .route("/session", get(handle_get_session))
+            .route("/session", get(handle_get_session).post(handle_get_session))
             .route("/list-sessions", get(handle_axum_list_sessions))
             .route("/revoke-session", post(handle_axum_revoke_session))
             .route("/revoke-sessions", post(handle_axum_revoke_sessions))
@@ -351,7 +351,7 @@ impl BetterAuth {
 
         core_routes
             // /get-session is an alias for /session (TS client compatibility)
-            .route("/get-session", get(handle_get_session))
+            .route("/get-session", get(handle_get_session).post(handle_get_session))
             // Plugin endpoint dispatch — catch-all for any path not handled above
             .fallback(handle_plugin_dispatch)
             .layer(axum_mw::from_fn_with_state(self.ctx.clone(), origin_check_middleware))

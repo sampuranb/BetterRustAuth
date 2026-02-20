@@ -70,13 +70,14 @@ impl std::fmt::Debug for BetterAuth {
 /// let auth = better_auth(options, adapter);
 /// // auth.context holds the fully-initialized context
 /// ```
-pub fn better_auth(
+pub async fn better_auth(
     options: BetterAuthOptions,
     adapter: Arc<dyn InternalAdapter>,
 ) -> Result<BetterAuth, String> {
     AuthContextBuilder::new(options)
         .adapter(adapter)
         .build_auth()
+        .await
 }
 
 /// Create a BetterAuth instance for minimal/stateless mode (no DB required for migrations).
@@ -91,7 +92,7 @@ pub fn better_auth(
 /// # Arguments
 /// - `options`: Configuration options.
 /// - `adapter`: A lightweight adapter (e.g., memory adapter).
-pub fn better_auth_minimal(
+pub async fn better_auth_minimal(
     options: BetterAuthOptions,
     adapter: Arc<dyn InternalAdapter>,
 ) -> Result<BetterAuth, String> {
@@ -99,6 +100,7 @@ pub fn better_auth_minimal(
         .adapter(adapter)
         .stateless_mode(true)
         .build_auth()
+        .await
 }
 
 // ─── Builder ──────────────────────────────────────────────────────
@@ -185,8 +187,8 @@ impl AuthContextBuilder {
     }
 
     /// Build a `BetterAuth` instance (context + options).
-    pub fn build_auth(self) -> Result<BetterAuth, String> {
-        let context = self.build()?;
+    pub async fn build_auth(self) -> Result<BetterAuth, String> {
+        let context = self.build().await?;
         Ok(BetterAuth { context })
     }
 
@@ -204,7 +206,7 @@ impl AuthContextBuilder {
     /// 9. Collect and initialize plugins
     /// 10. Run plugin init hooks
     /// 11. Merge plugin rate limits
-    pub fn build(mut self) -> Result<Arc<AuthContext>, String> {
+    pub async fn build(mut self) -> Result<Arc<AuthContext>, String> {
         // 0. Apply stateless mode defaults (TS createAuthContext lines 88-102)
         if self.stateless {
             apply_stateless_defaults(&mut self.options);
@@ -338,7 +340,7 @@ impl AuthContextBuilder {
 
         // 13. Run plugin init hooks
         // (TS: runPluginInit(ctx) in create-context.ts line 355)
-        run_plugin_init(&ctx);
+        run_plugin_init(&ctx).await;
 
         Ok(ctx)
     }
@@ -350,21 +352,16 @@ impl AuthContextBuilder {
 ///
 /// Mirrors TS `runPluginInit` from `context/helpers.ts`.
 ///
-/// In the TS version, plugins can return modified options and context.
-/// In Rust, plugins can perform initialization side effects.
-fn run_plugin_init(ctx: &Arc<AuthContext>) {
-    let plugin_ids: Vec<String> = ctx
-        .plugin_registry
-        .plugin_ids()
-        .into_iter()
-        .map(|s| s.to_string())
-        .collect();
-    for plugin_id in &plugin_ids {
-        if let Some(plugin) = ctx.plugin_registry.get_plugin(plugin_id) {
-            // Plugins implement the init trait method which can perform
-            // setup, register hooks, etc.
-            let _ = plugin.id(); // Plugin is already initialized via PluginRegistry
-        }
+/// Calls `plugin.init()` on each registered plugin, passing a
+/// `PluginInitContext` with the auth options. This allows plugins
+/// to perform setup, register hooks, validate configuration, etc.
+async fn run_plugin_init(ctx: &Arc<AuthContext>) {
+    let init_ctx = better_auth_core::plugin::PluginInitContext {
+        options: &ctx.options,
+    };
+
+    if let Err(e) = ctx.plugin_registry.init_all(&init_ctx).await {
+        ctx.logger.error(&format!("Plugin init error: {}", e));
     }
 }
 
@@ -530,12 +527,13 @@ mod tests {
     use super::*;
     use crate::internal_adapter::tests::MockInternalAdapter;
 
-    #[test]
-    fn test_builder_builds_context() {
+    #[tokio::test]
+    async fn test_builder_builds_context() {
         let options = BetterAuthOptions::new("test-secret-that-is-long-enough-32");
         let ctx = AuthContextBuilder::new(options)
             .adapter(Arc::new(MockInternalAdapter))
             .build()
+            .await
             .unwrap();
 
         assert_eq!(ctx.secret, "test-secret-that-is-long-enough-32");
@@ -543,19 +541,20 @@ mod tests {
         assert_eq!(ctx.app_name, "Better Auth");
     }
 
-    #[test]
-    fn test_builder_custom_app_name() {
+    #[tokio::test]
+    async fn test_builder_custom_app_name() {
         let mut options = BetterAuthOptions::new("test-secret-that-is-long-enough-32");
         options.app_name = Some("My App".into());
         let ctx = AuthContextBuilder::new(options)
             .adapter(Arc::new(MockInternalAdapter))
             .build()
+            .await
             .unwrap();
         assert_eq!(ctx.app_name, "My App");
     }
 
-    #[test]
-    fn test_builder_with_plugins() {
+    #[tokio::test]
+    async fn test_builder_with_plugins() {
         #[derive(Debug)]
         struct TestPlugin;
 
@@ -569,6 +568,7 @@ mod tests {
             .adapter(Arc::new(MockInternalAdapter))
             .plugin(Arc::new(TestPlugin))
             .build()
+            .await
             .unwrap();
 
         assert_eq!(ctx.plugin_registry.len(), 1);
@@ -576,20 +576,21 @@ mod tests {
         assert!(!ctx.has_plugin("nonexistent"));
     }
 
-    #[test]
-    fn test_builder_fails_without_adapter() {
+    #[tokio::test]
+    async fn test_builder_fails_without_adapter() {
         let options = BetterAuthOptions::new("test-secret");
-        let result = AuthContextBuilder::new(options).build();
+        let result = AuthContextBuilder::new(options).build().await;
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_builder_trusted_origins() {
+    #[tokio::test]
+    async fn test_builder_trusted_origins() {
         let options = BetterAuthOptions::new("test-secret-that-is-long-enough-32");
         let ctx = AuthContextBuilder::new(options)
             .adapter(Arc::new(MockInternalAdapter))
             .trusted_origins(vec!["https://example.com".into()])
             .build()
+            .await
             .unwrap();
 
         assert!(ctx.trusted_origins.contains(&"https://example.com".into()));
@@ -623,10 +624,10 @@ mod tests {
 
     // ─── better_auth() and better_auth_minimal() tests ──────────
 
-    #[test]
-    fn test_better_auth_function() {
+    #[tokio::test]
+    async fn test_better_auth_function() {
         let options = BetterAuthOptions::new("test-secret-that-is-long-enough-32");
-        let auth = better_auth(options, Arc::new(MockInternalAdapter)).unwrap();
+        let auth = better_auth(options, Arc::new(MockInternalAdapter)).await.unwrap();
 
         assert_eq!(auth.context.secret, "test-secret-that-is-long-enough-32");
         assert_eq!(auth.context.base_path, "/api/auth");
@@ -635,10 +636,10 @@ mod tests {
         assert!(!auth.context.session_config.cookie_cache_enabled);
     }
 
-    #[test]
-    fn test_better_auth_minimal_function() {
+    #[tokio::test]
+    async fn test_better_auth_minimal_function() {
         let options = BetterAuthOptions::new("test-secret-that-is-long-enough-32");
-        let auth = better_auth_minimal(options, Arc::new(MockInternalAdapter)).unwrap();
+        let auth = better_auth_minimal(options, Arc::new(MockInternalAdapter)).await.unwrap();
 
         // Stateless defaults should be applied
         assert!(auth.context.session_config.cookie_cache_enabled);
@@ -725,44 +726,47 @@ mod tests {
 
     // ─── OAuth and password config tests ────────────────────────
 
-    #[test]
-    fn test_builder_oauth_config_default() {
+    #[tokio::test]
+    async fn test_builder_oauth_config_default() {
         let options = BetterAuthOptions::new("test-secret-that-is-long-enough-32");
         let ctx = AuthContextBuilder::new(options)
             .adapter(Arc::new(MockInternalAdapter))
             .build()
+            .await
             .unwrap();
 
         assert_eq!(ctx.oauth_config.store_state_strategy, "database");
         assert!(!ctx.oauth_config.skip_state_cookie_check);
     }
 
-    #[test]
-    fn test_builder_password_config() {
+    #[tokio::test]
+    async fn test_builder_password_config() {
         let options = BetterAuthOptions::new("test-secret-that-is-long-enough-32");
         let ctx = AuthContextBuilder::new(options)
             .adapter(Arc::new(MockInternalAdapter))
             .build()
+            .await
             .unwrap();
 
         assert_eq!(ctx.password_config.min_password_length, 8);
         assert_eq!(ctx.password_config.max_password_length, 128);
     }
 
-    #[test]
-    fn test_builder_skip_csrf_check() {
+    #[tokio::test]
+    async fn test_builder_skip_csrf_check() {
         let mut options = BetterAuthOptions::new("test-secret-that-is-long-enough-32");
         options.advanced.disable_csrf_check = true;
         let ctx = AuthContextBuilder::new(options)
             .adapter(Arc::new(MockInternalAdapter))
             .build()
+            .await
             .unwrap();
 
         assert!(ctx.skip_csrf_check);
     }
 
-    #[test]
-    fn test_builder_is_trusted_origin() {
+    #[tokio::test]
+    async fn test_builder_is_trusted_origin() {
         let mut options = BetterAuthOptions::new("test-secret-that-is-long-enough-32");
         options.base_url = Some("https://example.com".into());
         options.trusted_origins.push("https://app.example.com".into());
@@ -770,6 +774,7 @@ mod tests {
         let ctx = AuthContextBuilder::new(options)
             .adapter(Arc::new(MockInternalAdapter))
             .build()
+            .await
             .unwrap();
 
         assert!(ctx.is_trusted_origin("https://example.com/api", false));

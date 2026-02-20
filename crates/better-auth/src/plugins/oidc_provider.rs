@@ -1611,7 +1611,8 @@ impl BetterAuthPlugin for OidcProviderPlugin {
             PluginEndpoint::with_handler("/oauth2/register", HttpMethod::Post, false, register_handler),
             PluginEndpoint::with_handler("/oauth2/consent", HttpMethod::Post, true, consent_handler),
             PluginEndpoint::with_handler("/oauth2/revoke", HttpMethod::Post, false, revoke_handler),
-            PluginEndpoint::with_handler("/oauth2/endsession", HttpMethod::Get, false, end_session),
+            PluginEndpoint::with_handler("/oauth2/endsession", HttpMethod::Get, false, end_session.clone()),
+            PluginEndpoint::with_handler("/oauth2/endsession", HttpMethod::Post, false, end_session),
         ]
     }
 
@@ -1662,7 +1663,7 @@ mod tests {
     fn test_endpoints() {
         let plugin = OidcProviderPlugin::default();
         let eps = plugin.endpoints();
-        assert_eq!(eps.len(), 9);
+        assert_eq!(eps.len(), 10);
         assert_eq!(eps[0].path, "/.well-known/openid-configuration");
         assert_eq!(eps[6].path, "/oauth2/consent");
     }

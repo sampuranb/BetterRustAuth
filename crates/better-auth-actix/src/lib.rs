@@ -316,7 +316,9 @@ impl BetterAuth {
                         .route("/sign-in/social", web::post().to(handle_social_sign_in))
                         .route("/sign-out", web::post().to(handle_sign_out))
                         .route("/session", web::get().to(handle_get_session))
+                        .route("/session", web::post().to(handle_get_session))
                         .route("/get-session", web::get().to(handle_get_session))
+                        .route("/get-session", web::post().to(handle_get_session))
                         .route("/list-sessions", web::get().to(handle_list_sessions))
                         .route("/revoke-session", web::post().to(handle_revoke_session))
                         .route("/revoke-sessions", web::post().to(handle_revoke_sessions))
@@ -625,7 +627,6 @@ fn user_id_from_session(session: &SessionResponse) -> Result<String, ApiError> {
 // ─── Middleware ─────────────────────────────────────────────────
 
 /// Convert a MiddlewareError to an HttpResponse.
-#[allow(dead_code)]
 fn middleware_error_response(err: MiddlewareError) -> HttpResponse {
     match err {
         MiddlewareError::Forbidden { code, message } => {
@@ -648,7 +649,6 @@ fn middleware_error_response(err: MiddlewareError) -> HttpResponse {
 }
 
 /// Normalize the request path by stripping the base path prefix.
-#[allow(dead_code)]
 fn normalize_path(path: &str, base_path: &str) -> String {
     let stripped = path.strip_prefix(base_path).unwrap_or(path);
     if stripped.is_empty() {
@@ -660,6 +660,54 @@ fn normalize_path(path: &str, base_path: &str) -> String {
     }
 }
 
+/// Run origin check and rate limiting middleware.
+///
+/// Must be called at the start of every Actix route handler in
+/// the `configure()` path to match the protection provided by
+/// the Axum middleware layers and the core handler pipeline.
+fn run_middleware_checks(
+    ctx: &AuthContext,
+    req: &HttpRequest,
+) -> Result<(), HttpResponse> {
+    let route_path = normalize_path(req.path(), &ctx.base_path);
+
+    // Origin check
+    let origin_headers: HashMap<String, better_auth::middleware::origin_check::HeaderValue> = req
+        .headers()
+        .iter()
+        .filter_map(|(k, v)| {
+            v.to_str().ok().map(|v_str| {
+                (
+                    k.as_str().to_lowercase(),
+                    better_auth::middleware::origin_check::HeaderValue::new(v_str),
+                )
+            })
+        })
+        .collect();
+
+    if let Err(e) = better_auth::middleware::origin_check::validate_origin(
+        req.method().as_str(),
+        &origin_headers,
+        &route_path,
+        &ctx.trusted_origins,
+        &ctx.origin_check_config,
+    ) {
+        return Err(middleware_error_response(e));
+    }
+
+    // Rate limiting
+    let ip = req
+        .connection_info()
+        .realip_remote_addr()
+        .unwrap_or("127.0.0.1")
+        .to_string();
+    if let Err(e) = ctx.rate_limiter.check(&ip, &route_path) {
+        return Err(middleware_error_response(e));
+    }
+
+    Ok(())
+}
+
 // ─── Route Handlers ─────────────────────────────────────────────
 
 async fn handle_ok() -> HttpResponse {
@@ -668,24 +716,36 @@ async fn handle_ok() -> HttpResponse {
 
 async fn handle_sign_up(
     ctx: Data<Arc<AuthContext>>,
+    req: HttpRequest,
     body: Json<routes::sign_up::SignUpRequest>,
 ) -> Result<HttpResponse, ApiError> {
+    if let Err(resp) = run_middleware_checks(ctx.get_ref(), &req) {
+        return Ok(resp);
+    }
     let result = routes::sign_up::handle_sign_up(ctx.get_ref().clone(), body.into_inner()).await?;
     Ok(HttpResponse::Created().json(result))
 }
 
 async fn handle_sign_in(
     ctx: Data<Arc<AuthContext>>,
+    req: HttpRequest,
     body: Json<routes::sign_in::SignInRequest>,
 ) -> Result<HttpResponse, ApiError> {
+    if let Err(resp) = run_middleware_checks(ctx.get_ref(), &req) {
+        return Ok(resp);
+    }
     let result = routes::sign_in::handle_sign_in(ctx.get_ref().clone(), body.into_inner()).await?;
     Ok(HttpResponse::Ok().json(result))
 }
 
 async fn handle_social_sign_in(
     ctx: Data<Arc<AuthContext>>,
+    req: HttpRequest,
     body: Json<routes::sign_in::SocialSignInRequest>,
 ) -> Result<HttpResponse, ApiError> {
+    if let Err(resp) = run_middleware_checks(ctx.get_ref(), &req) {
+        return Ok(resp);
+    }
     let result =
         routes::sign_in::handle_social_sign_in(ctx.get_ref().clone(), body.into_inner()).await?;
 
@@ -697,6 +757,9 @@ async fn handle_sign_out(
     ctx: Data<Arc<AuthContext>>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ApiError> {
+    if let Err(resp) = run_middleware_checks(ctx.get_ref(), &req) {
+        return Ok(resp);
+    }
     let token = extract_session_token(&req, ctx.get_ref());
     let result =
         routes::sign_out::handle_sign_out(ctx.get_ref().clone(), token.as_deref()).await?;
@@ -717,6 +780,9 @@ async fn handle_get_session(
     ctx: Data<Arc<AuthContext>>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ApiError> {
+    if let Err(resp) = run_middleware_checks(ctx.get_ref(), &req) {
+        return Ok(resp);
+    }
     let token = match extract_session_token(&req, ctx.get_ref()) {
         Some(t) => t,
         None => return Ok(HttpResponse::Ok().json(serde_json::Value::Null)),

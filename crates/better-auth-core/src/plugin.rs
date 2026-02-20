@@ -130,7 +130,7 @@ pub trait BetterAuthPlugin: Send + Sync + fmt::Debug {
 
     /// Called during auth context initialization.
     /// Allows the plugin to perform setup, validate options, etc.
-    async fn init(&self, _ctx: &PluginInitContext) -> Result<(), crate::error::BetterAuthError> {
+    async fn init(&self, _ctx: &PluginInitContext<'_>) -> Result<(), crate::error::BetterAuthError> {
         Ok(())
     }
 
@@ -190,9 +190,9 @@ pub trait BetterAuthPlugin: Send + Sync + fmt::Debug {
 
 /// Context available during plugin initialization.
 #[derive(Debug)]
-pub struct PluginInitContext {
+pub struct PluginInitContext<'a> {
     /// The auth options (read-only).
-    pub options: crate::options::BetterAuthOptions,
+    pub options: &'a crate::options::BetterAuthOptions,
 }
 
 /// An API endpoint provided by a plugin.

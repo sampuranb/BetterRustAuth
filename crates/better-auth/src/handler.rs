@@ -512,7 +512,8 @@ async fn route_request(
         }
 
         // Get session (both /session and /get-session for TS client compat)
-        ("GET", "/session") | ("GET", "/get-session") => {
+        // TS uses method: ["GET", "POST"] — POST is used for session refresh
+        ("GET" | "POST", "/session") | ("GET" | "POST", "/get-session") => {
             let cookie_prefix = ctx.options.advanced.cookie_prefix.as_deref().unwrap_or("better-auth");
             let token = match request.session_token_with_prefix(cookie_prefix) {
                 Some(t) => t,
@@ -1100,8 +1101,94 @@ async fn route_request(
             }
         }
 
-        // Not found
-        _ => GenericResponse::error(404, "NOT_FOUND", &format!("Route not found: {} {}", request.method, route_path)),
+        // Plugin endpoint dispatch — try plugin handlers before returning 404
+        _ => {
+            use better_auth_core::plugin::HttpMethod as PluginMethod;
+            use crate::plugin_runtime::endpoint_router;
+
+            let plugin_method = match request.method.as_str() {
+                "GET" => PluginMethod::Get,
+                "POST" => PluginMethod::Post,
+                "PUT" => PluginMethod::Put,
+                "DELETE" => PluginMethod::Delete,
+                "PATCH" => PluginMethod::Patch,
+                _ => return GenericResponse::error(405, "METHOD_NOT_ALLOWED", "Method not allowed"),
+            };
+
+            // Check full path (with base_path) since plugin endpoints are registered without it
+            let full_path = format!("{}{}", ctx.base_path, route_path);
+            let dispatch_path = if endpoint_router::has_plugin_endpoint(&ctx.plugin_registry, plugin_method, route_path) {
+                route_path.to_string()
+            } else if endpoint_router::has_plugin_endpoint(&ctx.plugin_registry, plugin_method, &full_path) {
+                full_path
+            } else {
+                return GenericResponse::error(404, "NOT_FOUND", &format!("Route not found: {} {}", request.method, route_path));
+            };
+
+            // Build plugin handler request
+            let cookie_prefix = ctx.options.advanced.cookie_prefix.as_deref().unwrap_or("better-auth");
+            let session_token = request.session_token_with_prefix(cookie_prefix);
+
+            // Try to resolve session for plugin
+            let session = if let Some(ref token) = session_token {
+                match routes::session::handle_get_session(
+                    ctx.clone(), token, routes::session::GetSessionOptions::default(), request.cookie_header()
+                ).await {
+                    Ok(result) => result.response.map(|s| serde_json::json!({
+                        "user": s.user,
+                        "session": s.session,
+                    })),
+                    Err(_) => None,
+                }
+            } else {
+                None
+            };
+
+            let body_json: serde_json::Value = request.body.as_ref()
+                .and_then(|b| serde_json::from_slice(b).ok())
+                .unwrap_or(serde_json::json!({}));
+
+            let query_json: serde_json::Value = request.query.as_ref()
+                .map(|q| {
+                    let mut map = serde_json::Map::new();
+                    for pair in q.split('&') {
+                        if let Some((key, value)) = pair.split_once('=') {
+                            map.insert(key.to_string(), serde_json::Value::String(value.to_string()));
+                        }
+                    }
+                    serde_json::Value::Object(map)
+                })
+                .unwrap_or(serde_json::json!({}));
+
+            let plugin_req = better_auth_core::plugin::PluginHandlerRequest {
+                body: body_json,
+                query: query_json,
+                headers: request.headers.clone(),
+                session_token,
+                session,
+            };
+
+            let ctx_any: Arc<dyn std::any::Any + Send + Sync> = ctx.clone();
+            match endpoint_router::dispatch_to_handler(
+                &ctx.plugin_registry, ctx_any, plugin_method, &dispatch_path, plugin_req
+            ).await {
+                Some(response) => {
+                    let mut resp = GenericResponse {
+                        status: response.status,
+                        headers: response.headers.iter().map(|(k, v)| (k.clone(), vec![v.clone()])).collect(),
+                        body: serde_json::to_vec(&response.body).unwrap_or_default(),
+                    };
+                    // Handle redirects
+                    if response.status == 302 {
+                        if let Some(location) = response.headers.get("Location") {
+                            resp = GenericResponse::redirect(302, location);
+                        }
+                    }
+                    resp
+                }
+                None => GenericResponse::error(404, "NOT_FOUND", &format!("Route not found: {} {}", request.method, route_path)),
+            }
+        }
     }
 }
 
