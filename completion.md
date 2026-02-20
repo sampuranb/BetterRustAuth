@@ -79,7 +79,7 @@ All 27 plugins from the TS version exist in Rust:
 | custom-session | `plugins/custom-session/` (3 files) | `custom_session.rs` (6389 bytes) | ✅ 88% | Custom session data |
 | device-authorization | `plugins/device-authorization/` (6 files) | `device_authorization.rs` (24916 bytes) | ✅ 88% | Device auth grant flow |
 | email-otp | `plugins/email-otp/` (8 files) | `email_otp.rs` (34K+ bytes) | ✅ 90% | `sendVerificationOTP` callback wired into options |
-| generic-oauth | `plugins/generic-oauth/` (16 files) | `generic_oauth.rs` (39706 bytes) | ✅ 88% | Custom OAuth providers |
+| generic-oauth | `plugins/generic-oauth/` (16 files) | `generic_oauth.rs` (49K+ bytes) | ✅ 94% | Custom OAuth providers, TS SDK endpoint compat |
 | haveibeenpwned | `plugins/haveibeenpwned/` (2 files) | `haveibeenpwned.rs` (7052 bytes) | ✅ 92% | Password breach check |
 | jwt | `plugins/jwt/` (10 files) | `jwt.rs` (23297 bytes) | ✅ 88% | JWT session tokens |
 | last-login-method | `plugins/last-login-method/` (4 files) | `last_login_method.rs` (7556 bytes) | ✅ 92% | Login method tracking |

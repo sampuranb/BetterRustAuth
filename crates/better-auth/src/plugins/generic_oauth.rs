@@ -2,10 +2,15 @@
 //
 // Maps to: packages/better-auth/src/plugins/generic-oauth/index.ts + routes.ts
 //
-// Endpoints:
+// Endpoints (Rust-native per-provider paths):
 //   GET  /sign-in/oauth2/<providerId>   — redirect to provider authorization URL
 //   GET  /callback/oauth2/<providerId>  — handle OAuth callback
-//   POST /sign-in/oauth2/<providerId>   — programmatic sign-in
+//   GET  /oauth2/callback/<providerId>  — handle OAuth callback (TS path alias)
+//   POST /oauth2/link/<providerId>      — programmatic account linking
+//
+// Endpoints (TS SDK-compatible, providerId in body):
+//   POST /sign-in/oauth2               — { providerId, callbackURL?, ... }
+//   POST /oauth2/link                  — { providerId, callbackURL, ... }
 //
 // Features:
 //   - User-defined OAuth2 providers with configurable endpoints
@@ -660,8 +665,11 @@ impl BetterAuthPlugin for GenericOAuthPlugin {
                     }
                 })
             });
+            // Register callback at both Rust path and TS path
             endpoints.push(PluginEndpoint::with_handler(
-                &format!("/callback/oauth2/{}", provider_id2), HttpMethod::Get, false, callback_handler));
+                &format!("/callback/oauth2/{}", provider_id2), HttpMethod::Get, false, callback_handler.clone()));
+            endpoints.push(PluginEndpoint::with_handler(
+                &format!("/oauth2/callback/{}", provider_id2), HttpMethod::Get, false, callback_handler));
 
             let provider_id3 = provider.id.clone();
             let provider_config3 = provider.clone();
@@ -744,6 +752,181 @@ impl BetterAuthPlugin for GenericOAuthPlugin {
             endpoints.push(PluginEndpoint::with_handler(
                 &format!("/oauth2/link/{}", provider_id3), HttpMethod::Post, true, link_handler));
         }
+
+        // ─── TS SDK-compatible dispatching endpoints ───────────────────
+        //
+        // The TS client sends:
+        //   POST /sign-in/oauth2        { providerId: "xxx", ... }
+        //   POST /oauth2/link           { providerId: "xxx", callbackURL: "..." }
+        //
+        // These endpoints extract providerId from the JSON body and
+        // delegate to the matching per-provider handler registered above.
+
+        // POST /sign-in/oauth2 — TS client sign-in (body contains providerId)
+        {
+            let providers: Vec<GenericOAuthProvider> = self.options.providers.clone();
+            let sign_in_dispatch: PluginHandlerFn = Arc::new(move |ctx_any, req: PluginHandlerRequest| {
+                let providers = providers.clone();
+                Box::pin(async move {
+                    let provider_id = match req.body.get("providerId").and_then(|v| v.as_str()) {
+                        Some(id) => id.to_string(),
+                        None => return PluginHandlerResponse::error(400, "BAD_REQUEST", "providerId is required"),
+                    };
+                    let provider = match providers.iter().find(|p| p.id == provider_id) {
+                        Some(p) => p.clone(),
+                        None => return PluginHandlerResponse::error(400, "PROVIDER_NOT_FOUND", &format!("Provider '{}' not found", provider_id)),
+                    };
+                    let ctx = ctx_any.downcast::<crate::context::AuthContext>()
+                        .expect("Expected AuthContext");
+
+                    let callback_url = req.body.get("callbackURL")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let disable_redirect = req.body.get("disableRedirect")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+
+                    // Build OAuth authorization URL
+                    let state = uuid::Uuid::new_v4().to_string();
+                    let expires = chrono::Utc::now() + chrono::Duration::minutes(10);
+                    let _ = ctx.adapter.create_verification(&state, &callback_url, expires).await;
+
+                    // Use /oauth2/callback/{provider} (TS path)
+                    let redirect_uri = if let Some(ref custom) = provider.redirect_uri {
+                        custom.clone()
+                    } else {
+                        format!("{}{}/oauth2/callback/{}",
+                            ctx.base_url.as_deref().unwrap_or(""),
+                            ctx.base_path,
+                            provider.id)
+                    };
+
+                    let extra_scopes: Vec<String> = req.body.get("scopes")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+                        .unwrap_or_default();
+                    let all_scopes: Vec<&str> = provider.scopes.iter().map(|s| s.as_str())
+                        .chain(extra_scopes.iter().map(|s| s.as_str()))
+                        .collect();
+
+                    let mut auth_url = format!(
+                        "{}?client_id={}&redirect_uri={}&state={}&response_type=code&scope={}",
+                        provider.authorization_url,
+                        provider.client_id,
+                        urlencoding::encode(&redirect_uri),
+                        state,
+                        urlencoding::encode(&all_scopes.join(" ")),
+                    );
+                    if let Some(ref prompt) = provider.prompt {
+                        auth_url.push_str(&format!("&prompt={}", prompt));
+                    }
+                    if let Some(ref access_type) = provider.access_type {
+                        auth_url.push_str(&format!("&access_type={}", access_type));
+                    }
+
+                    PluginHandlerResponse::ok(serde_json::json!({
+                        "url": auth_url,
+                        "redirect": !disable_redirect,
+                    }))
+                })
+            });
+            endpoints.push(PluginEndpoint::with_handler(
+                "/sign-in/oauth2", HttpMethod::Post, false, sign_in_dispatch));
+        }
+
+        // POST /oauth2/link — TS client account linking (body contains providerId)
+        {
+            let providers: Vec<GenericOAuthProvider> = self.options.providers.clone();
+            let link_dispatch: PluginHandlerFn = Arc::new(move |ctx_any, req: PluginHandlerRequest| {
+                let providers = providers.clone();
+                Box::pin(async move {
+                    let provider_id = match req.body.get("providerId").and_then(|v| v.as_str()) {
+                        Some(id) => id.to_string(),
+                        None => return PluginHandlerResponse::error(400, "BAD_REQUEST", "providerId is required"),
+                    };
+                    let provider = match providers.iter().find(|p| p.id == provider_id) {
+                        Some(p) => p.clone(),
+                        None => return PluginHandlerResponse::error(400, "PROVIDER_NOT_FOUND", &format!("Provider '{}' not found", provider_id)),
+                    };
+                    let ctx = ctx_any.downcast::<crate::context::AuthContext>()
+                        .expect("Expected AuthContext");
+
+                    // Require authenticated session
+                    let user_id = match req.session.as_ref()
+                        .and_then(|s| s.get("user"))
+                        .and_then(|u| u.get("id"))
+                        .and_then(|id| id.as_str())
+                    {
+                        Some(uid) => uid.to_string(),
+                        None => return PluginHandlerResponse::error(401, "UNAUTHORIZED", "Session required to link account"),
+                    };
+                    let user_email = req.session.as_ref()
+                        .and_then(|s| s.get("user"))
+                        .and_then(|u| u.get("email"))
+                        .and_then(|e| e.as_str())
+                        .unwrap_or("")
+                        .to_string();
+
+                    let callback_url = req.body.get("callbackURL")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+
+                    // Generate state with link context
+                    let state = uuid::Uuid::new_v4().to_string();
+                    let expires = chrono::Utc::now() + chrono::Duration::minutes(10);
+                    let state_value = serde_json::json!({
+                        "callbackURL": callback_url,
+                        "link": {
+                            "userId": user_id,
+                            "email": user_email,
+                        },
+                    });
+                    let _ = ctx.adapter.create_verification(&state, &state_value.to_string(), expires).await;
+
+                    let redirect_uri = if let Some(ref custom) = provider.redirect_uri {
+                        custom.clone()
+                    } else {
+                        format!("{}{}/oauth2/callback/{}",
+                            ctx.base_url.as_deref().unwrap_or(""),
+                            ctx.base_path,
+                            provider.id)
+                    };
+
+                    let extra_scopes: Vec<String> = req.body.get("scopes")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+                        .unwrap_or_default();
+                    let all_scopes: Vec<&str> = provider.scopes.iter().map(|s| s.as_str())
+                        .chain(extra_scopes.iter().map(|s| s.as_str()))
+                        .collect();
+
+                    let mut auth_url = format!(
+                        "{}?client_id={}&redirect_uri={}&state={}&response_type=code&scope={}",
+                        provider.authorization_url,
+                        provider.client_id,
+                        urlencoding::encode(&redirect_uri),
+                        state,
+                        urlencoding::encode(&all_scopes.join(" ")),
+                    );
+                    if let Some(ref prompt) = provider.prompt {
+                        auth_url.push_str(&format!("&prompt={}", prompt));
+                    }
+                    if let Some(ref access_type) = provider.access_type {
+                        auth_url.push_str(&format!("&access_type={}", access_type));
+                    }
+
+                    PluginHandlerResponse::ok(serde_json::json!({
+                        "url": auth_url,
+                        "redirect": true,
+                    }))
+                })
+            });
+            endpoints.push(PluginEndpoint::with_handler(
+                "/oauth2/link", HttpMethod::Post, true, link_dispatch));
+        }
+
         endpoints
     }
 
@@ -881,7 +1064,7 @@ mod tests {
             providers: vec![sample_provider()],
         });
         let endpoints = plugin.endpoints();
-        assert_eq!(endpoints.len(), 3); // sign-in + callback + link per provider
+        assert_eq!(endpoints.len(), 6); // per-provider: sign-in(GET) + callback(GET)×2 + link(POST) + TS dispatchers: sign-in(POST) + link(POST)
     }
 
     #[test]
